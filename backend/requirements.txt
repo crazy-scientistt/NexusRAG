@@ -1,0 +1,24 @@
+# Web Framework (Original)
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+requests>=2.31.0
+
+# Vector Database & LangChain (Original)
+chromadb>=0.4.22
+langchain>=0.1.0
+langchain-text-splitters>=0.0.1
+
+# Document Processing (Original - Text-based only)
+pypdf>=3.17.0
+python-docx>=1.1.0
+beautifulsoup4>=4.12.0
+
+# Basic utilities (Original)
+numpy>=1.24.0
+python-dotenv>=1.0.0
+firebase-admin>=6.5.0
+
+# PostgreSQL/Supabase Support (Python 3.12+ compatible)
+# Using psycopg2-binary - NO SQLAlchemy to avoid PyO3/tokenizers issues
+psycopg2-binary>=2.9.9

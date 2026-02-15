@@ -1,0 +1,9 @@
+# Netlify redirects for SPA routing
+# This file should be placed in your publish directory (dist/public)
+# It's a backup to netlify.toml redirects
+
+# Force HTTPS redirect
+http://ragv2.netlify.app/* https://ragv2.netlify.app/:splat 301!
+
+# SPA routing - catch-all for client-side routing
+/* /index.html 200
