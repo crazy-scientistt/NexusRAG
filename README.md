@@ -1,4 +1,5 @@
 # Cloud RAG System - v2.0 (Fixed)
+RAG V1: https://github.com/crazy-scientistt/RAG
 
 A production-ready Retrieval-Augmented Generation (RAG) system with improved LLM responses, structured outputs, and clean architecture.
 
