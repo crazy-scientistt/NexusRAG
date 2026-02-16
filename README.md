@@ -454,7 +454,7 @@ See [LICENSE](LICENSE) and [NOTICE](NOTICE) for full details.
 ## 👤 Author
 
 **Abdulrehman Qureshi**
-- Email: arq5158@gmail.com
+- Whatsapp: +966 57 847 6997
 - GitHub: [@crazy-scientistt](https://github.com/crazy-scientistt)
 
 ## 🙏 Attribution
