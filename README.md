@@ -15,6 +15,14 @@ This version includes major improvements to fix poor LLM response quality:
 **See `FIXES_APPLIED.md` for detailed explanation of all changes.**
 
 ---
+<img width="1918" height="1079" alt="Landing Page" src="https://github.com/user-attachments/assets/760601f8-9531-4f71-bf08-7e2d11caf8db" />
+<img width="1919" height="1079" alt="Features" src="https://github.com/user-attachments/assets/31566fe0-cfef-49bd-92bf-90446967b21b" />
+<img width="1918" height="1079" alt="Authentication" src="https://github.com/user-attachments/assets/9ed5b71e-1275-4fa1-97a2-80fd496057a8"
+<img width="1918" height="1078" alt="Workplace 1" src="https://github.com/user-attachments/assets/13936fae-c127-4cea-81d8-79695f5301d8" />
+ />
+<img width="1918" height="1078" alt="Workplace 2" src="https://github.com/user-attachments/assets/f5d27283-1780-4e6c-a5e4-1a7015491edd" />
+<img width="1918" height="1078" alt="Workplace 3" src="https://github.com/user-attachments/assets/4466a025-943d-4083-ac45-64de8534004c" />
+
 
 ## 🚀 Quick Start
 
