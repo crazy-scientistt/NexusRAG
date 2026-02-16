@@ -1,9 +1,9 @@
-# Cloud RAG System - v2.0 (Fixed)
+# NexusRAG System - v2.0
 RAG V1: https://github.com/crazy-scientistt/RAG
 
 A production-ready Retrieval-Augmented Generation (RAG) system with improved LLM responses, structured outputs, and clean architecture.
 
-## 🎯 What's Fixed in v2.0
+## 🎯 What's in v2.0
 
 This version includes major improvements to fix poor LLM response quality:
 
@@ -121,7 +121,7 @@ RAG_V2-main-fixed/
 ## 🎨 Features
 
 ### Core RAG Capabilities
-- 📄 **Multi-format Documents**: PDF, DOCX, TXT, HTML, images (OCR)
+- 📄 **Multi-format Documents**: PDF, DOCX, TXT, HTML, images (OCR) #OCR removed due to RAM/GPU constrints on railway.
 - 🧠 **Smart Chunking**: Context-aware document splitting
 - 🔍 **Vector Search**: Fast semantic retrieval with Chroma
 - 💬 **Structured Responses**: Clean markdown formatting
@@ -169,16 +169,14 @@ DB_PATH = "./data/rag.db"
 
 ### Recommended Models
 
-**For Quality** (slower, better responses):
-- `Qwen/Qwen2.5-72B-Instruct` ⭐⭐⭐⭐⭐ (current)
-- `meta-llama/Llama-3.3-70B-Instruct` ⭐⭐⭐⭐⭐
+**For Quality** (slower, not so good responses):
+- `Qwen/Qwen2.5-72B-Instruct-2507` ⭐⭐ (current)
 
-**For Speed** (faster, good quality):  
-- `mistralai/Mixtral-8x7B-Instruct-v0.1` ⭐⭐⭐⭐
+**For Speed** (Best, Excellent quality):  
+- `Qwen/Qwen2.5-72B-Instruct Make sure you have enough RAM/GPU to run it on cloud, otherwise build will fail` ⭐⭐⭐⭐⭐
 - `Qwen/Qwen2.5-32B-Instruct` ⭐⭐⭐
 
-**For Development** (fastest, testing):
-- `Qwen/Qwen2.5-7B-Instruct` ⭐⭐⭐
+
 
 Change in `backend/config.py`:
 ```python
