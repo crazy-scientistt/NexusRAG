@@ -41,6 +41,8 @@ STOPWORDS = {
     "them", "then", "there", "these", "they", "this", "those", "to", "up", "was",
     "we", "were", "what", "when", "where", "which", "while", "who", "will", "with",
     "would", "you", "your", "it's", "also", "any", "each", "both", "about",
+    # Dropped so "18 percent" reduces to the same token as "18%".
+    "percent", "pct", "percentage",
 }
 
 SUPPORTED_AT = 0.60
@@ -58,10 +60,22 @@ def _content_words(text: str) -> set:
     cleaned = _MARKDOWN_NOISE.sub(" ", text.lower())
     words = set()
     for raw in _WORD.findall(cleaned):
-        word = raw.strip(".,'-")
+        # Strip currency, percent and thousands separators so the same figure
+        # written two ways counts as the same evidence.
+        word = raw.strip(".,'-%$").replace(",", "").replace("$", "").replace("%", "")
         if len(word) > 1 and word not in STOPWORDS:
             words.add(word)
     return words
+
+
+def _fact_tokens(words: set) -> set:
+    """Quantities and dates: the part of a claim worth checking.
+
+    Must start with a digit, so "4.2", "18" and "14th" count while a label that
+    merely contains one, like "q3", does not. Treating "q3" as a figure let a
+    sentence claiming the wrong revenue borrow credit from the matching label.
+    """
+    return {w for w in words if w[:1].isdigit()}
 
 
 def split_sentences(answer: str) -> List[str]:
@@ -94,7 +108,21 @@ def _best_match(sentence_words: set, chunks: List[Dict[str, Any]]) -> tuple:
             chunk["_words"] = chunk_words
         if not chunk_words:
             continue
-        covered = len(sentence_words & chunk_words) / len(sentence_words)
+        lexical = len(sentence_words & chunk_words) / len(sentence_words)
+        facts = _fact_tokens(sentence_words)
+        if facts:
+            # A sentence that reuses every figure in the source is grounded even
+            # when it rephrases the prose around them, which plain word overlap
+            # under-credits.
+            fact_cover = len(facts & chunk_words) / len(facts)
+            covered = 0.5 * lexical + 0.5 * fact_cover
+            if fact_cover == 0.0:
+                # States a figure the source never mentions. The wording around it
+                # may match closely, which is exactly the dangerous case, so this
+                # can never read as supported.
+                covered = min(covered, PARTIAL_AT - 0.01)
+        else:
+            covered = lexical
         if covered > best_score:
             best_score = covered
             best_index = index
