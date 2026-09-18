@@ -268,9 +268,9 @@ def upsert_user(uid: str, email: str):
 # Session Functions
 # ============================================================================
 
-def create_session(user_id: str, name: str) -> str:
-    """Create a new session."""
-    session_id = str(uuid.uuid4())
+def create_session(user_id: str, name: str, session_id: Optional[str] = None) -> str:
+    """Create a new session, optionally with a caller-supplied id."""
+    session_id = session_id or str(uuid.uuid4())
     now = datetime.utcnow()
     
     db_type, conn = _get_db_type_and_connection()

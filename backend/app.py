@@ -23,6 +23,7 @@ try:
 except Exception:
     pass
 import json
+import re
 import shutil
 import uuid
 from datetime import datetime, timedelta
@@ -103,6 +104,9 @@ rag_instance: Optional[CloudRAG] = None
 # Prior turns replayed into the prompt so follow-up questions resolve.
 CHAT_HISTORY_TURNS = 12
 
+# Only re-create ids we could have issued, never arbitrary client input.
+_SESSION_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+
 BASE_DIR = Path(__file__).parent.parent
 is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 default_upload = Path("/tmp/uploads") if is_serverless else (BASE_DIR / "uploads")
@@ -150,9 +154,24 @@ def _ensure_user(user):
 
 
 def _ensure_session(session_id: str, user_id: str):
+    """Make sure the session exists, re-creating it if the store has lost it.
+
+    Sessions live in /tmp when no Postgres connection is configured, and /tmp is
+    per serverless instance and wiped on every deploy. A client that still holds
+    a valid session id therefore got "Session not found" as soon as its request
+    landed on a different instance, which broke uploads and sending mid-use.
+    Re-materialising the session keeps the app usable; configure SUPABASE_PASSWORD
+    (or DATABASE_URL) for storage that actually persists.
+    """
     sessions = list_sessions(user_id)
-    if not any(s["id"] == session_id for s in sessions):
+    if any(s["id"] == session_id for s in sessions):
+        return True
+
+    if not _SESSION_ID_RE.match(session_id or ""):
         raise HTTPException(status_code=404, detail="Session not found")
+
+    print(f"[WARN] Session {session_id} missing from store; re-creating it.")
+    create_session(user_id, "Recovered Session", session_id=session_id)
     return True
 
 

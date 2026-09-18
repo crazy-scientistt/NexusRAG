@@ -38,6 +38,7 @@ ALLOWED_UPLOAD_EXTENSIONS = {
     ".txt",
     ".md",
     ".csv",
+    ".json",
     ".docx",
     ".png",
     ".jpg",
