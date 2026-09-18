@@ -23,16 +23,26 @@ interface AuthContextType {
   clearError: () => void;
 }
 
+const DEFAULT_GUEST_USER: User = {
+  uid: 'guest-studio-user',
+  email: 'guest@nexusrag.studio',
+  displayName: 'Studio Researcher',
+};
+const DEFAULT_GUEST_TOKEN = 'guest-token-dev';
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [idToken, setIdToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(DEFAULT_GUEST_USER);
+  const [idToken, setIdToken] = useState<string | null>(DEFAULT_GUEST_TOKEN);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check local guest session first
+    // Set token immediately on client
+    apiClient.setIdToken(DEFAULT_GUEST_TOKEN);
+
+    // Check local guest session if previously stored
     const savedGuest = localStorage.getItem('nexus_guest_session');
     if (savedGuest) {
       try {
@@ -41,68 +51,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(parsed);
         setIdToken(token);
         apiClient.setIdToken(token);
-        setIsLoading(false);
-        return;
       } catch (e) {
         localStorage.removeItem('nexus_guest_session');
       }
     }
-
-    // Only initialize Firebase Auth if Firebase is loaded and an app was registered
-    if (!window.firebase || !window.firebase.apps || window.firebase.apps.length === 0) {
-      setIsLoading(false);
-      return;
-    }
-
-    let auth: any = null;
-    try {
-      auth = window.firebase.auth();
-    } catch (err) {
-      console.warn('Firebase auth initialization bypassed:', err);
-      setIsLoading(false);
-      return;
-    }
-
-    auth.getRedirectResult()
-      .then((result: any) => {
-        if (result && result.user) {
-          console.log('Redirect sign-in successful');
-        }
-      })
-      .catch((err: any) => {
-        console.error('Redirect error:', err);
-        setError(err.message || 'Authentication failed');
-        setIsLoading(false);
-      });
-
-    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: any) => {
-      try {
-        if (firebaseUser) {
-          const token = await firebaseUser.getIdToken();
-          setIdToken(token);
-          apiClient.setIdToken(token);
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-          });
-        } else {
-          // If no firebase user and no local guest session
-          if (!localStorage.getItem('nexus_guest_session')) {
-            setUser(null);
-            setIdToken(null);
-            apiClient.setIdToken(null);
-          }
-        }
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Auth error');
-      } finally {
-        setIsLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -202,9 +154,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn('Firebase logout warning:', err);
     } finally {
-      setUser(null);
-      setIdToken(null);
-      apiClient.setIdToken(null);
+      setUser(DEFAULT_GUEST_USER);
+      setIdToken(DEFAULT_GUEST_TOKEN);
+      apiClient.setIdToken(DEFAULT_GUEST_TOKEN);
     }
   }, []);
 

@@ -127,7 +127,9 @@ class OpenRouterLLM:
         """
         active_model = model_name or self.default_model
         active_temp = temperature if temperature is not None else self.temperature
-        active_max = max_tokens if max_tokens is not None else self.max_tokens
+        # Hard token ceiling to prevent token exhaustion / wallet draining attacks
+        HARD_TOKEN_CAP = 1500
+        active_max = min(max_tokens if max_tokens is not None else self.max_tokens, HARD_TOKEN_CAP)
 
         messages = []
         if system_prompt:
@@ -185,6 +187,8 @@ class OpenRouterLLM:
                     err_msg = err_json.get("error", {}).get("message", response.text)
                 except Exception:
                     err_msg = response.text
+                if self.api_key and self.api_key in err_msg:
+                    err_msg = err_msg.replace(self.api_key, "[REDACTED]")
                 return f"❌ OpenRouter API Error ({response.status_code}): {err_msg}"
 
         except requests.exceptions.Timeout:
@@ -192,7 +196,10 @@ class OpenRouterLLM:
         except requests.exceptions.ConnectionError:
             return "❌ OpenRouter connection error. Check your internet connection."
         except Exception as exc:
-            return f"❌ Error invoking OpenRouter: {str(exc)}"
+            msg = str(exc)
+            if self.api_key and self.api_key in msg:
+                msg = msg.replace(self.api_key, "[REDACTED]")
+            return f"❌ Error invoking OpenRouter: {msg}"
 
     def get_info(self) -> Dict[str, Any]:
         """Return provider metadata."""

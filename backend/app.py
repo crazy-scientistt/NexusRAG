@@ -39,6 +39,7 @@ from fastapi import (
     Form,
     Query,
     Response,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -65,6 +66,14 @@ from db_supabase import (
 )
 from rag_system import CloudRAG
 from openrouter_provider import CURATED_MODELS
+from security_guard import (
+    rate_limiter,
+    get_client_ip,
+    validate_question,
+    validate_model,
+    validate_upload_file,
+    MAX_SESSION_DOCUMENTS,
+)
 
 
 config = get_config()
@@ -296,12 +305,21 @@ async def get_messages(session_id: str, user=Depends(get_current_user)):
 async def create_message(
     session_id: str,
     payload: MessageRequest,
+    request: Request,
     user=Depends(get_current_user),
 ):
     _ensure_user(user)
     _ensure_session(session_id, user["uid"])
-    if not payload.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+    # 1. IP Rate Limiting & Cooldown Protection (prevents wallet draining scripts)
+    client_ip = get_client_ip(request)
+    rate_limiter.check_chat(client_ip)
+
+    # 2. Input Validation & Token Stuffing Defense (max 1500 chars)
+    sanitized_question = validate_question(payload.question)
+
+    # 3. Model Whitelisting (prevents unauthorized expensive model attacks)
+    validated_model = validate_model(payload.model, config.OPENROUTER_MODEL)
 
     upsert_user(user["uid"], user.get("email", ""))
 
@@ -317,17 +335,17 @@ async def create_message(
     user_msg_id = add_message(
         session_id,
         role="user",
-        content=payload.question,
+        content=sanitized_question,
     )
 
     rag = _get_rag()
     result = rag.query(
-        question=payload.question,
+        question=sanitized_question,
         user_id=user["uid"],
         session_id=session_id,
         mode=payload.mode,
         explain_simpler=payload.explain_simpler,
-        model=payload.model,
+        model=validated_model,
     )
 
     assistant_metadata = {
@@ -375,6 +393,7 @@ async def export_session(session_id: str, user=Depends(get_current_user)):
 
 @api_router.post("/upload")
 async def upload_document(
+    request: Request,
     background_tasks: BackgroundTasks,
     session_id: str = Form(...),
     is_temp: bool = Form(False),
@@ -384,32 +403,24 @@ async def upload_document(
     """Upload and process a document."""
     _ensure_user(user)
     _ensure_session(session_id, user["uid"])
-    rag = _get_rag()
 
-    allowed_extensions = {
-        ".pdf",
-        ".txt",
-        ".docx",
-        ".html",
-        ".htm",
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".heic",
-        ".webp",
-        ".bmp",
-        ".tiff",
-        ".tif",
-    }
-    file_ext = Path(file.filename).suffix.lower()
+    # 1. Upload Rate Limiting per IP
+    client_ip = get_client_ip(request)
+    rate_limiter.check_upload(client_ip)
 
-    if file_ext not in allowed_extensions:
+    # 2. Strict File Extension Validation (blocks executable/script files)
+    validate_upload_file(file)
+
+    # 3. Session Document Ceiling (prevents disk & vector database bloat)
+    existing_docs = list_documents(user["uid"], session_id)
+    if len(existing_docs) >= MAX_SESSION_DOCUMENTS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type. Allowed: {', '.join(sorted(allowed_extensions))}",
+            detail=f"Session limit of {MAX_SESSION_DOCUMENTS} documents reached. Please delete old documents before adding more.",
         )
 
     size = _enforce_size_limit(file)
+    rag = _get_rag()
 
     try:
         safe_name = _safe_filename(file.filename)

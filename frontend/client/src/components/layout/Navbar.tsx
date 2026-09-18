@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '@/contexts/AuthContext';
 import { useTheme, type ThemeMode } from '@/contexts/ThemeContext';
-import { Sun, Moon, Monitor, ArrowUpRight, LogOut, Menu, X } from 'lucide-react';
+import { Sun, Moon, Monitor, ArrowUpRight, Menu, X } from 'lucide-react';
 
 interface NavbarProps {
   onNavigate: (page: string) => void;
@@ -10,7 +9,6 @@ interface NavbarProps {
 }
 
 export function Navbar({ onNavigate, currentPage }: NavbarProps) {
-  const { isAuthenticated, user, logout } = useAuth();
   const { mode, setMode } = useTheme();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -25,7 +23,7 @@ export function Navbar({ onNavigate, currentPage }: NavbarProps) {
     { label: 'Overview', page: 'landing' },
     { label: 'Architecture', page: 'features' },
     { label: 'Security', page: 'security' },
-    ...(isAuthenticated ? [{ label: 'Studio', page: 'workspace' }] : []),
+    { label: 'Studio', page: 'workspace' },
   ];
 
   return (
@@ -129,32 +127,13 @@ export function Navbar({ onNavigate, currentPage }: NavbarProps) {
               </div>
 
               {/* Action Button */}
-              {isAuthenticated ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => onNavigate('workspace')}
-                    className="flex items-center gap-2 px-4 py-2 rounded-md bg-foreground text-background font-semibold text-xs tracking-wide hover:opacity-90 transition-opacity"
-                  >
-                    <span>Studio Canvas</span>
-                    <ArrowUpRight className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => logout()}
-                    title="Sign Out"
-                    className="p-2 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => onNavigate('auth')}
-                  className="flex items-center gap-2 px-4 py-2 rounded-md bg-foreground text-background font-semibold text-xs tracking-wide hover:opacity-90 transition-opacity"
-                >
-                  <span>Launch Studio</span>
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </button>
-              )}
+              <button
+                onClick={() => onNavigate('workspace')}
+                className="flex items-center gap-2 px-4 py-2 rounded-md bg-foreground text-background font-semibold text-xs tracking-wide hover:opacity-90 transition-opacity"
+              >
+                <span>Launch Studio</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             {/* Mobile Menu Toggle */}
@@ -235,12 +214,12 @@ export function Navbar({ onNavigate, currentPage }: NavbarProps) {
 
                 <button
                   onClick={() => {
-                    onNavigate(isAuthenticated ? 'workspace' : 'auth');
+                    onNavigate('workspace');
                     setMobileOpen(false);
                   }}
                   className="w-full py-2.5 rounded-md bg-foreground text-background text-xs font-semibold text-center"
                 >
-                  {isAuthenticated ? 'Open Studio Canvas' : 'Launch Studio'}
+                  Launch Studio
                 </button>
               </div>
             </motion.div>

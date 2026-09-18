@@ -8,10 +8,9 @@ import { FeaturesPage } from '@/pages/FeaturesPage';
 import { SecurityPage } from '@/pages/SecurityPage';
 import { TermsPage } from '@/pages/TermsPage';
 import { PrivacyPage } from '@/pages/PrivacyPage';
-import { AuthPage } from '@/pages/AuthPage';
 import { WorkspacePage } from '@/pages/WorkspacePage';
 
-type Page = 'landing' | 'features' | 'security' | 'terms' | 'privacy' | 'auth' | 'workspace';
+type Page = 'landing' | 'features' | 'security' | 'terms' | 'privacy' | 'workspace';
 
 const pageTransition = {
   initial: { opacity: 0, y: 10 },
@@ -21,28 +20,10 @@ const pageTransition = {
 };
 
 export default function App() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isLoading } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>('landing');
 
-  // Auto-redirect to workspace if authenticated and on auth page
-  useEffect(() => {
-    if (isAuthenticated && currentPage === 'auth') {
-      setCurrentPage('workspace');
-    }
-  }, [isAuthenticated, currentPage]);
-
-  // Auto-redirect to landing if logged out while on workspace
-  useEffect(() => {
-    if (!isAuthenticated && currentPage === 'workspace') {
-      setCurrentPage('landing');
-    }
-  }, [isAuthenticated, currentPage]);
-
   const navigate = (page: string) => {
-    if (page === 'workspace' && !isAuthenticated) {
-      setCurrentPage('auth');
-      return;
-    }
     setCurrentPage(page as Page);
     if (page !== 'workspace') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -68,18 +49,8 @@ export default function App() {
   }
 
   // Workspace has its own full-screen canvas
-  if (currentPage === 'workspace' && isAuthenticated) {
+  if (currentPage === 'workspace') {
     return <WorkspacePage onBack={() => setCurrentPage('landing')} />;
-  }
-
-  // Auth has its own dedicated page
-  if (currentPage === 'auth') {
-    return (
-      <AuthPage
-        onSuccess={() => setCurrentPage('workspace')}
-        onBack={() => setCurrentPage('landing')}
-      />
-    );
   }
 
   return (
@@ -91,21 +62,21 @@ export default function App() {
           <motion.div key={currentPage} {...pageTransition}>
             {currentPage === 'landing' && (
               <LandingPage
-                onGetStarted={() => navigate(isAuthenticated ? 'workspace' : 'auth')}
+                onGetStarted={() => navigate('workspace')}
                 onFeatures={() => navigate('features')}
                 onNavigate={navigate}
               />
             )}
             {currentPage === 'features' && (
               <FeaturesPage
-                onGetStarted={() => navigate(isAuthenticated ? 'workspace' : 'auth')}
+                onGetStarted={() => navigate('workspace')}
                 onBack={() => navigate('landing')}
               />
             )}
             {currentPage === 'security' && (
               <SecurityPage
                 onBack={() => navigate('landing')}
-                onGetStarted={() => navigate(isAuthenticated ? 'workspace' : 'auth')}
+                onGetStarted={() => navigate('workspace')}
               />
             )}
             {currentPage === 'terms' && (
