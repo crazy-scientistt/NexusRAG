@@ -1,24 +1,32 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "frontend/dist",
-  "functions": {
-    "api/index.py": {
-      "memory": 1024
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "frontend/dist"
+      }
     }
-  },
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/api", "destination": "/api/index" },
-    { "source": "/health", "destination": "/api/index" },
-    { "source": "/me", "destination": "/api/index" },
-    { "source": "/stats", "destination": "/api/index" },
-    { "source": "/models", "destination": "/api/index" },
-    { "source": "/sessions", "destination": "/api/index" },
-    { "source": "/sessions/(.*)", "destination": "/api/index" },
-    { "source": "/upload", "destination": "/api/index" },
-    { "source": "/documents", "destination": "/api/index" },
-    { "source": "/documents/(.*)", "destination": "/api/index" },
-    { "source": "/clear", "destination": "/api/index" },
-    { "source": "/((?!api|health|me|stats|models|sessions|upload|documents|clear).*)", "destination": "/index.html" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "api/index.py" },
+    { "src": "/api", "dest": "api/index.py" },
+    { "src": "/health", "dest": "api/index.py" },
+    { "src": "/me", "dest": "api/index.py" },
+    { "src": "/stats", "dest": "api/index.py" },
+    { "src": "/models", "dest": "api/index.py" },
+    { "src": "/sessions", "dest": "api/index.py" },
+    { "src": "/sessions/(.*)", "dest": "api/index.py" },
+    { "src": "/upload", "dest": "api/index.py" },
+    { "src": "/documents", "dest": "api/index.py" },
+    { "src": "/documents/(.*)", "dest": "api/index.py" },
+    { "src": "/clear", "dest": "api/index.py" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
