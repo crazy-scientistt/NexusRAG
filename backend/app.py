@@ -630,7 +630,8 @@ async def remove_document(doc_id: str, user=Depends(get_current_user)):
     delete_document(doc_id, user["uid"])
     try:
         rag = _get_rag()
-        rag.vector_store.delete_by_doc_id(doc_id)
+        # Clear the stored chunks too, or the next rehydrate brings them back.
+        rag.clear_document_data(doc_id, user["uid"], doc.get("session_id"))
     except Exception as exc:  # pylint: disable=broad-except
         print(f"Failed to delete vectors for {doc_id}: {exc}")
     _delete_file(Path(doc["stored_path"]))

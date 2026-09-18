@@ -29,6 +29,7 @@ from llm_provider import create_llm
 from vector_store import VectorStore
 from free_models import get_models, resolve_default_model
 from evidence import verify_answer
+from db_supabase import save_chunks, load_chunks, delete_chunks, delete_user_chunks
 
 
 class CloudRAG:
@@ -74,6 +75,73 @@ class CloudRAG:
         print(f"[-] Total Indexed Documents: {self.vector_store.count()}")
         print("=" * 70 + "\n")
 
+    def ensure_loaded(self, user_id: str, session_id: Optional[str] = None) -> int:
+        """Load this session's stored chunks into memory if they are not there yet.
+
+        The vector store keeps embeddings in memory, so a fresh process starts
+        empty even when the documents are still on record. Without this, an
+        uploaded file stayed listed in the vault but retrieval found nothing, and
+        the answer would report no supporting documents. Rehydrating from the
+        database lets a restart, or a second serverless instance, recover.
+        """
+        scopes = getattr(self, "_loaded_scopes", None)
+        if scopes is None:
+            scopes = set()
+            self._loaded_scopes = scopes
+
+        key = (user_id, session_id or "")
+        if key in scopes:
+            return 0
+
+        try:
+            stored = load_chunks(user_id, session_id)
+        except Exception as exc:
+            print(f"[WARN] Could not load stored chunks: {exc}")
+            return 0
+
+        scopes.add(key)
+        if not stored:
+            return 0
+
+        memory_docs = self.vector_store._memory_docs
+        known = {d.get("id") for d in memory_docs}
+        restored = 0
+        for chunk in stored:
+            meta = chunk.get("metadata") or {}
+            chunk_id = f"{chunk['doc_id']}_{meta.get('chunk_index', restored)}"
+            if chunk_id in known:
+                continue
+            memory_docs.append({
+                "id": chunk_id,
+                "content": chunk["content"],
+                "metadata": meta,
+                "embedding": chunk["embedding"],
+            })
+            known.add(chunk_id)
+            restored += 1
+
+        if restored:
+            print(f"[OK] Rehydrated {restored} stored chunks for this session")
+        return restored
+
+    def forget_scope(self, user_id: str, session_id: Optional[str] = None) -> None:
+        """Let a scope reload next time, after its stored chunks change."""
+        scopes = getattr(self, "_loaded_scopes", None)
+        if scopes is not None:
+            scopes.discard((user_id, session_id or ""))
+
+    def persist_chunks(self, doc_id, user_id, session_id, texts, metadatas) -> None:
+        """Store chunk text and embeddings so they outlive this process."""
+        try:
+            embeddings = self.vector_store.embedding_function.embed_documents(list(texts))
+            save_chunks(doc_id, user_id, session_id or "", [
+                {"content": text, "embedding": embedding, "metadata": metadata}
+                for text, embedding, metadata in zip(texts, embeddings, metadatas)
+            ])
+            self.forget_scope(user_id, session_id)
+        except Exception as exc:
+            print(f"[WARN] Could not persist chunks for {doc_id}: {exc}")
+
     def add_document(
         self,
         file_path: str,
@@ -102,6 +170,7 @@ class CloudRAG:
             metadatas.append(meta)
 
         self.vector_store.add_documents(texts, metadatas)
+        self.persist_chunks(doc_id, user_id, session_id, texts, metadatas)
         print("[OK] Document vectors indexed successfully\n")
 
     @staticmethod
@@ -252,6 +321,8 @@ class CloudRAG:
         """
         active_model = model or resolve_default_model(self.config.OPENROUTER_MODEL)
 
+        self.ensure_loaded(user_id, session_id)
+
         where = {"user_id": user_id}
         if session_id:
             where["session_id"] = session_id
@@ -342,6 +413,33 @@ class CloudRAG:
             "generation_ms": generation_ms,
             "evidence": evidence,
         }
+
+    def clear_user_data(self, user_id: str):
+        """Delete every vector for a user, in memory and on record."""
+        self.vector_store.delete_where({"user_id": user_id})
+        try:
+            delete_user_chunks(user_id)
+        except Exception as exc:
+            print(f"[WARN] Could not delete stored chunks for {user_id}: {exc}")
+        self.forget_scope(user_id, None)
+
+    def clear_session_data(self, user_id: str, session_id: str):
+        """Delete every vector tied to a session, in memory and on record."""
+        self.vector_store.delete_where({"user_id": user_id, "session_id": session_id})
+        try:
+            delete_user_chunks(user_id, session_id)
+        except Exception as exc:
+            print(f"[WARN] Could not delete stored chunks for session {session_id}: {exc}")
+        self.forget_scope(user_id, session_id)
+
+    def clear_document_data(self, doc_id: str, user_id: str, session_id: Optional[str] = None):
+        """Delete one document's vectors, in memory and on record."""
+        self.vector_store.delete_by_doc_id(doc_id)
+        try:
+            delete_chunks(doc_id)
+        except Exception as exc:
+            print(f"[WARN] Could not delete stored chunks for {doc_id}: {exc}")
+        self.forget_scope(user_id, session_id)
 
     def get_stats(self) -> dict:
         """Get system statistics."""

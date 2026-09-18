@@ -162,7 +162,23 @@ def _init_sqlite(conn):
         )
     """)
     
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS chunks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            session_id TEXT,
+            chunk_index INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            embedding TEXT NOT NULL,
+            metadata TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     # Indexes
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_user_session ON chunks(user_id, session_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(doc_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_docs_user_session ON documents(user_id, session_id)")
@@ -227,7 +243,23 @@ def _init_postgres(conn):
         )
     """)
     
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS chunks (
+            id SERIAL PRIMARY KEY,
+            doc_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            session_id TEXT,
+            chunk_index INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            embedding TEXT NOT NULL,
+            metadata TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # Indexes for performance
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_user_session ON chunks(user_id, session_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(doc_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_updated ON sessions(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
@@ -798,3 +830,132 @@ try:
     init_db()
 except Exception as e:
     print(f"[WARN] Database initialization warning: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Chunk persistence
+#
+# Embeddings used to live only in the vector store's memory, so a restart left
+# documents listed but unsearchable: the row survived, the vectors did not.
+# Storing chunks alongside everything else makes the database the single source
+# of truth, and lets the vector store rebuild itself from it.
+# ---------------------------------------------------------------------------
+
+
+def save_chunks(doc_id: str, user_id: str, session_id: str, chunks: List[Dict]) -> int:
+    """Persist a document's chunks and their embeddings. Replaces any existing set."""
+    if not chunks:
+        return 0
+
+    db_type, conn = _get_db_type_and_connection()
+    cur = conn.cursor()
+    now = datetime.utcnow()
+
+    if db_type == "postgres":
+        cur.execute("DELETE FROM chunks WHERE doc_id=%s", (doc_id,))
+        for index, chunk in enumerate(chunks):
+            cur.execute(
+                """
+                INSERT INTO chunks(doc_id, user_id, session_id, chunk_index, content,
+                                   embedding, metadata, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (doc_id, user_id, session_id or "", index, chunk.get("content", ""),
+                 json.dumps(chunk.get("embedding") or []),
+                 json.dumps(chunk.get("metadata") or {}), now),
+            )
+    else:
+        cur.execute("DELETE FROM chunks WHERE doc_id=?", (doc_id,))
+        for index, chunk in enumerate(chunks):
+            cur.execute(
+                """
+                INSERT INTO chunks(doc_id, user_id, session_id, chunk_index, content,
+                                   embedding, metadata, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (doc_id, user_id, session_id or "", index, chunk.get("content", ""),
+                 json.dumps(chunk.get("embedding") or []),
+                 json.dumps(chunk.get("metadata") or {}), now.isoformat()),
+            )
+
+    conn.commit()
+    return len(chunks)
+
+
+def load_chunks(user_id: str, session_id: Optional[str] = None) -> List[Dict]:
+    """Every stored chunk for a user, optionally narrowed to one session."""
+    db_type, conn = _get_db_type_and_connection()
+    cur = conn.cursor()
+
+    if db_type == "postgres":
+        if session_id:
+            cur.execute(
+                "SELECT doc_id, content, embedding, metadata FROM chunks "
+                "WHERE user_id=%s AND session_id=%s ORDER BY doc_id, chunk_index",
+                (user_id, session_id),
+            )
+        else:
+            cur.execute(
+                "SELECT doc_id, content, embedding, metadata FROM chunks "
+                "WHERE user_id=%s ORDER BY doc_id, chunk_index",
+                (user_id,),
+            )
+    else:
+        if session_id:
+            cur.execute(
+                "SELECT doc_id, content, embedding, metadata FROM chunks "
+                "WHERE user_id=? AND session_id=? ORDER BY doc_id, chunk_index",
+                (user_id, session_id),
+            )
+        else:
+            cur.execute(
+                "SELECT doc_id, content, embedding, metadata FROM chunks "
+                "WHERE user_id=? ORDER BY doc_id, chunk_index",
+                (user_id,),
+            )
+
+    out = []
+    for row in cur.fetchall():
+        try:
+            embedding = json.loads(row[2]) if row[2] else []
+            metadata = json.loads(row[3]) if row[3] else {}
+        except (TypeError, ValueError):
+            continue
+        if not embedding:
+            continue
+        out.append({
+            "doc_id": row[0],
+            "content": row[1] or "",
+            "embedding": embedding,
+            "metadata": metadata,
+        })
+    return out
+
+
+def delete_chunks(doc_id: str) -> None:
+    """Drop one document's chunks."""
+    db_type, conn = _get_db_type_and_connection()
+    cur = conn.cursor()
+    if db_type == "postgres":
+        cur.execute("DELETE FROM chunks WHERE doc_id=%s", (doc_id,))
+    else:
+        cur.execute("DELETE FROM chunks WHERE doc_id=?", (doc_id,))
+    conn.commit()
+
+
+def delete_user_chunks(user_id: str, session_id: Optional[str] = None) -> None:
+    """Drop every chunk for a user, or just for one session."""
+    db_type, conn = _get_db_type_and_connection()
+    cur = conn.cursor()
+    if db_type == "postgres":
+        if session_id:
+            cur.execute("DELETE FROM chunks WHERE user_id=%s AND session_id=%s", (user_id, session_id))
+        else:
+            cur.execute("DELETE FROM chunks WHERE user_id=%s", (user_id,))
+    else:
+        if session_id:
+            cur.execute("DELETE FROM chunks WHERE user_id=? AND session_id=?", (user_id, session_id))
+        else:
+            cur.execute("DELETE FROM chunks WHERE user_id=?", (user_id,))
+    conn.commit()
+
