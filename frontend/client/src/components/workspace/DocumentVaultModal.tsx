@@ -14,6 +14,7 @@ import {
 import type { Document } from '@/types';
 import { formatFileSize, formatDate } from '@/lib/utils';
 import { apiClient } from '@/services/api';
+import { useIsMobile } from '@/hooks/useMobile';
 
 interface DocumentVaultModalProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ export function DocumentVaultModal({
   onDelete,
   isUploading = false,
 }: DocumentVaultModalProps) {
+  const isMobile = useIsMobile();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<{ filename: string; text?: string } | null>(null);
@@ -58,7 +60,7 @@ export function DocumentVaultModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className={`fixed inset-0 z-50 flex ${isMobile ? 'items-end justify-center' : 'items-center justify-center p-4'}`}>
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -68,18 +70,24 @@ export function DocumentVaultModal({
         className="absolute inset-0 bg-black/50 backdrop-blur-xs"
       />
 
-      {/* Modal Dialog */}
+      {/* Modal / Bottom Sheet */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.98, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.98, y: 10 }}
+        initial={isMobile ? { y: '100%' } : { opacity: 0, scale: 0.98, y: 10 }}
+        animate={isMobile ? { y: 0 } : { opacity: 1, scale: 1, y: 0 }}
+        exit={isMobile ? { y: '100%' } : { opacity: 0, scale: 0.98, y: 10 }}
         transition={{ duration: 0.2 }}
-        className="relative w-full max-w-2xl bg-card border border-border rounded-lg shadow-xl p-6 sm:p-8 space-y-6 z-10 max-h-[90vh] overflow-y-auto text-foreground"
+        className={`relative w-full max-w-2xl bg-card border border-border shadow-xl p-5 sm:p-8 space-y-5 z-10 overflow-y-auto text-foreground ${
+          isMobile
+            ? 'max-h-[88vh] rounded-t-2xl border-b-0 pb-[max(1.5rem,env(safe-area-inset-bottom))]'
+            : 'max-h-[90vh] rounded-lg'
+        }`}
       >
+        {isMobile && <div className="w-12 h-1 rounded-full bg-border mx-auto mb-2 flex-shrink-0" />}
+
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border pb-4">
+        <div className="flex items-center justify-between border-b border-border pb-3">
           <div>
-            <h2 className="font-display text-xl font-bold">Document Vault</h2>
+            <h2 className="font-display text-lg sm:text-xl font-bold">Document Vault</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
               Upload dossiers, PDFs, and data files to index into your dense vector space.
             </p>
@@ -101,7 +109,7 @@ export function DocumentVaultModal({
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`p-8 rounded-lg border-2 border-dashed text-center cursor-pointer transition-colors ${
+          className={`p-6 sm:p-8 rounded-lg border-2 border-dashed text-center cursor-pointer transition-colors ${
             dragOver
               ? 'border-foreground bg-secondary'
               : 'border-border hover:border-foreground/40 bg-secondary/20'
@@ -115,12 +123,12 @@ export function DocumentVaultModal({
             onChange={(e) => onUpload(e.target.files)}
             className="hidden"
           />
-          <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-          <p className="text-sm font-semibold mb-1">
-            {isUploading ? 'Chunking & Indexing Embeddings...' : 'Drop documents here or click to browse'}
+          <Upload className="w-7 h-7 sm:w-8 sm:h-8 text-muted-foreground mx-auto mb-2.5" />
+          <p className="text-xs sm:text-sm font-semibold mb-1">
+            {isUploading ? 'Chunking & Indexing Embeddings...' : 'Tap to upload or drop documents'}
           </p>
-          <p className="text-xs text-muted-foreground">
-            Supports PDF, DOCX, TXT, Markdown, and JSON (up to 25MB per file)
+          <p className="text-[11px] sm:text-xs text-muted-foreground">
+            Supports PDF, DOCX, TXT, Markdown, JSON (up to 25MB)
           </p>
         </div>
 
@@ -128,7 +136,7 @@ export function DocumentVaultModal({
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs font-mono text-muted-foreground uppercase">
             <span>Indexed Documents ({documents.length})</span>
-            <span>Local 384D Partition</span>
+            <span>384D Vector Space</span>
           </div>
 
           {documents.length === 0 ? (
@@ -136,7 +144,7 @@ export function DocumentVaultModal({
               No documents in this session vault yet. Upload a file above to begin grounded synthesis.
             </div>
           ) : (
-            <div className="space-y-2 max-h-56 overflow-y-auto">
+            <div className="space-y-2 max-h-52 overflow-y-auto">
               {documents.map((doc) => (
                 <div
                   key={doc.id}
@@ -156,14 +164,14 @@ export function DocumentVaultModal({
                     <button
                       onClick={() => handlePreview(doc.id, doc.filename)}
                       title="Preview Text"
-                      className="p-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      className="p-2 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary min-h-[36px] min-w-[36px] flex items-center justify-center"
                     >
                       <Eye className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => onDelete(doc.id)}
                       title="Delete from Vault"
-                      className="p-1.5 rounded border border-border text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      className="p-2 rounded border border-border text-muted-foreground hover:text-destructive hover:bg-destructive/10 min-h-[36px] min-w-[36px] flex items-center justify-center"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -176,7 +184,7 @@ export function DocumentVaultModal({
 
         {/* Text Preview Modal if open */}
         {previewDoc && (
-          <div className="p-4 rounded-md border border-border bg-background space-y-2">
+          <div className="p-3.5 rounded-md border border-border bg-background space-y-2">
             <div className="flex items-center justify-between border-b border-border pb-2 text-xs font-mono">
               <span className="font-semibold truncate">Preview: {previewDoc.filename}</span>
               <button
@@ -186,7 +194,7 @@ export function DocumentVaultModal({
                 Close
               </button>
             </div>
-            <div className="max-h-40 overflow-y-auto font-mono text-xs text-muted-foreground whitespace-pre-wrap">
+            <div className="max-h-36 overflow-y-auto font-mono text-xs text-muted-foreground whitespace-pre-wrap">
               {previewLoading ? 'Loading document text...' : previewDoc.text}
             </div>
           </div>
@@ -195,7 +203,7 @@ export function DocumentVaultModal({
         <div className="pt-2 border-t border-border flex items-center justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-md bg-foreground text-background text-xs font-semibold"
+            className="w-full sm:w-auto px-5 py-2.5 rounded-md bg-foreground text-background text-xs font-semibold"
           >
             Done
           </button>

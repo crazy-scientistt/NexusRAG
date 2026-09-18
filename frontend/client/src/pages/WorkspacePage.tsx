@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
@@ -8,19 +8,19 @@ import {
   Copy,
   Check,
   FileText,
-  Search,
-  ChevronRight,
+  ChevronDown,
   Download,
   Paperclip,
   Sun,
   Moon,
   Monitor,
   Sparkles,
-  BarChart3,
-  Layers,
   FileSpreadsheet,
-  FileCheck,
   BookOpen,
+  SlidersHorizontal,
+  Clock,
+  Menu,
+  X,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -30,12 +30,15 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useSession } from '@/hooks/useSession';
 import { useMessages } from '@/hooks/useMessages';
 import { useDocuments } from '@/hooks/useDocuments';
-import { useIsMobile } from '@/hooks/useMobile';
+import { useDevice } from '@/hooks/useMobile';
 import { apiClient } from '@/services/api';
 import type { ModelInfo, MessageRequest, SourceCitation } from '@/types';
 import { ModelSelectorDropdown } from '@/components/shared/ModelSelectorDropdown';
 import { CitationDrawer } from '@/components/workspace/CitationDrawer';
 import { DocumentVaultModal } from '@/components/workspace/DocumentVaultModal';
+import { MobileBottomNav, type MobileTab } from '@/components/workspace/MobileBottomNav';
+import { MobileModelSheet } from '@/components/workspace/MobileModelSheet';
+import { MobileSessionsSheet } from '@/components/workspace/MobileSessionsSheet';
 
 interface WorkspacePageProps {
   onBack: () => void;
@@ -73,6 +76,8 @@ const OBJECTIVE_CONFIG: Record<SynthesisObjective, { label: string; icon: any; p
 export function WorkspacePage({ onBack }: WorkspacePageProps) {
   const { user, logout, isAuthenticated } = useAuth();
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const { isMobile, isTablet } = useDevice();
+
   const {
     sessions,
     activeSessionId,
@@ -93,8 +98,7 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
     activeSessionId,
     handleFirstMessage
   );
-  const { documents, uploadDocument, deleteDocument } = useDocuments(activeSessionId);
-  const isMobile = useIsMobile();
+  const { documents, uploadDocument, deleteDocument, isUploading } = useDocuments(activeSessionId);
 
   // Model selection state
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -102,12 +106,14 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
 
   // UI States
   const [inputValue, setInputValue] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile && !isTablet);
   const [docVaultOpen, setDocVaultOpen] = useState(false);
+  const [mobileModelOpen, setMobileModelOpen] = useState(false);
+  const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MobileTab>('canvas');
   const [selectedCitation, setSelectedCitation] = useState<SourceCitation | null>(null);
   const [synthesisObjective, setSynthesisObjective] = useState<SynthesisObjective>('brief');
   const [strictMode, setStrictMode] = useState<boolean>(true);
-  const [sessionSearch, setSessionSearch] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
 
@@ -141,7 +147,7 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
     setInputValue(e.target.value);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, isMobile ? 120 : 180)}px`;
     }
   };
 
@@ -213,38 +219,72 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
     }
   };
 
+  const handleMobileTabChange = (tab: MobileTab) => {
+    setMobileTab(tab);
+    if (tab === 'vault') {
+      setDocVaultOpen(true);
+    } else if (tab === 'sessions') {
+      setMobileSessionsOpen(true);
+    }
+  };
+
+  const activeModel = models.find((m) => m.id === selectedModelId) || {
+    id: selectedModelId,
+    name: selectedModelId.split('/').pop() || 'Gemini 2.0 Flash',
+  };
+
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground transition-colors duration-200 overflow-hidden font-sans">
-      {/* Top Workspace Header */}
-      <header className="h-16 border-b border-border bg-background/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between z-20 flex-shrink-0">
-        <div className="flex items-center gap-3">
+    <div className="h-screen flex flex-col bg-background text-foreground transition-colors duration-200 overflow-hidden font-sans select-none sm:select-auto">
+      {/* Top Workspace Bar */}
+      <header className="h-14 sm:h-16 border-b border-border bg-background/95 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between z-20 flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={onBack}
-            className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            className="p-1.5 sm:p-2 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             title="Back to Overview"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
 
+          {/* Toggle sidebar button on tablets */}
+          {isTablet && (
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-1.5 rounded-md border border-border text-foreground hover:bg-secondary"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+          )}
+
           <div className="flex items-center gap-2">
             <span className="font-display font-bold text-sm tracking-tight hidden sm:inline">
               NexusRAG
             </span>
-            <span className="text-muted-foreground hidden sm:inline">&bull;</span>
             <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
-              Studio Canvas
+              Studio
             </span>
           </div>
         </div>
 
-        {/* Center: Model Selector */}
+        {/* Center: Model Selector (Desktop: Dropdown, Mobile: Bottom Sheet Trigger) */}
         <div className="flex items-center gap-2">
-          <ModelSelectorDropdown
-            models={models}
-            selectedModelId={selectedModelId}
-            onSelectModel={setSelectedModelId}
-            compact
-          />
+          {isMobile ? (
+            <button
+              onClick={() => setMobileModelOpen(true)}
+              type="button"
+              className="px-2.5 py-1 rounded-md border border-border bg-card text-xs font-mono font-semibold flex items-center gap-1.5 truncate max-w-[160px]"
+            >
+              <span className="truncate">{activeModel.name}</span>
+              <ChevronDown className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+            </button>
+          ) : (
+            <ModelSelectorDropdown
+              models={models}
+              selectedModelId={selectedModelId}
+              onSelectModel={setSelectedModelId}
+              compact
+            />
+          )}
 
           <button
             onClick={() => setStrictMode(!strictMode)}
@@ -255,15 +295,16 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                 : 'bg-card text-muted-foreground border-border hover:text-foreground'
             }`}
           >
-            <span>{strictMode ? 'Strict Gate' : 'Hybrid Gate'}</span>
+            <span>{strictMode ? 'Strict' : 'Hybrid'}</span>
           </button>
         </div>
 
-        {/* Right Actions: Vault, Theme Toggle, Clear */}
-        <div className="flex items-center gap-2">
+        {/* Right Actions */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Desktop Vault Trigger */}
           <button
             onClick={() => setDocVaultOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-secondary/80 hover:bg-secondary text-foreground text-xs font-mono tracking-wider transition-colors"
+            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-secondary/80 hover:bg-secondary text-foreground text-xs font-mono tracking-wider transition-colors"
           >
             <Paperclip className="w-3.5 h-3.5" />
             <span>Vault ({documents.length})</span>
@@ -273,22 +314,22 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
           <div className="flex items-center p-0.5 rounded-full border border-border bg-secondary/60">
             <button
               onClick={() => setThemeMode('light')}
-              title="Light"
-              className={`p-1 rounded-full ${themeMode === 'light' ? 'bg-foreground text-background' : 'text-muted-foreground'}`}
+              title="Light Mode"
+              className={`p-1 sm:p-1.5 rounded-full transition-colors ${themeMode === 'light' ? 'bg-foreground text-background' : 'text-muted-foreground'}`}
             >
               <Sun className="w-3 h-3" />
             </button>
             <button
               onClick={() => setThemeMode('system')}
-              title="System"
-              className={`p-1 rounded-full ${themeMode === 'system' ? 'bg-foreground text-background' : 'text-muted-foreground'}`}
+              title="System Theme"
+              className={`p-1 sm:p-1.5 rounded-full transition-colors ${themeMode === 'system' ? 'bg-foreground text-background' : 'text-muted-foreground'}`}
             >
               <Monitor className="w-3 h-3" />
             </button>
             <button
               onClick={() => setThemeMode('dark')}
-              title="Dark"
-              className={`p-1 rounded-full ${themeMode === 'dark' ? 'bg-foreground text-background' : 'text-muted-foreground'}`}
+              title="Dark Mode"
+              className={`p-1 sm:p-1.5 rounded-full transition-colors ${themeMode === 'dark' ? 'bg-foreground text-background' : 'text-muted-foreground'}`}
             >
               <Moon className="w-3 h-3" />
             </button>
@@ -298,7 +339,7 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
             onClick={handleClearAllData}
             disabled={isClearing}
             title="Clear all documents & vectors"
-            className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+            className="p-1.5 sm:p-2 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -307,59 +348,61 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
 
       {/* Main Workspace Body */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sessions Sidebar */}
-        <aside
-          className={`${
-            sidebarOpen ? 'w-64' : 'w-0'
-          } border-r border-border bg-card/40 flex flex-col transition-all duration-200 overflow-hidden flex-shrink-0`}
-        >
-          <div className="p-3 border-b border-border flex items-center justify-between">
-            <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
-              Dossiers & Sessions
-            </span>
-            <button
-              onClick={() => createSession()}
-              className="p-1 rounded hover:bg-secondary text-foreground"
-              title="New Session"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {sessions.map((sess) => (
+        {/* Left Sessions Sidebar (Desktop & Tablet Landscape) */}
+        {!isMobile && (
+          <aside
+            className={`${
+              sidebarOpen ? 'w-60 lg:w-64' : 'w-0'
+            } border-r border-border bg-card/40 flex flex-col transition-all duration-200 overflow-hidden flex-shrink-0`}
+          >
+            <div className="p-3 border-b border-border flex items-center justify-between">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                Dossiers ({sessions.length})
+              </span>
               <button
-                key={sess.id}
-                onClick={() => selectSession(sess.id)}
-                className={`w-full text-left p-2 rounded-md text-xs truncate transition-colors flex items-center justify-between group ${
-                  sess.id === activeSessionId
-                    ? 'bg-secondary font-semibold text-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
-                }`}
+                onClick={() => createSession()}
+                className="p-1.5 rounded hover:bg-secondary text-foreground"
+                title="New Session"
               >
-                <span className="truncate">{sess.name || 'Untitled Session'}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteSession(sess.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:text-destructive transition-opacity"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
+                <Plus className="w-4 h-4" />
               </button>
-            ))}
-          </div>
-        </aside>
+            </div>
 
-        {/* Center Chat & Synthesis Stream */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {sessions.map((sess) => (
+                <button
+                  key={sess.id}
+                  onClick={() => selectSession(sess.id)}
+                  className={`w-full text-left p-2.5 rounded-md text-xs truncate transition-colors flex items-center justify-between group ${
+                    sess.id === activeSessionId
+                      ? 'bg-secondary font-semibold text-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                  }`}
+                >
+                  <span className="truncate">{sess.name || 'Untitled Session'}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteSession(sess.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-destructive transition-opacity"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </button>
+              ))}
+            </div>
+          </aside>
+        )}
+
+        {/* Center Synthesis Canvas & Chat Stream */}
         <main className="flex-1 flex flex-col bg-background overflow-hidden relative">
-          {/* Synthesis Objective Bar */}
-          <div className="border-b border-border bg-secondary/30 px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto text-xs">
+          {/* Synthesis Objective Bar (Scrollable Snap Pills on touch devices) */}
+          <div className="border-b border-border bg-secondary/30 px-3 sm:px-4 py-2 flex items-center gap-2 overflow-x-auto text-xs scrollbar-none">
             <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground flex-shrink-0">
-              Cognitive Objective:
+              Objective:
             </span>
-            <div className="flex items-center gap-1.5 overflow-x-auto">
+            <div className="flex items-center gap-1.5 overflow-x-auto flex-nowrap">
               {(Object.keys(OBJECTIVE_CONFIG) as SynthesisObjective[]).map((key) => {
                 const cfg = OBJECTIVE_CONFIG[key];
                 const Icon = cfg.icon;
@@ -368,10 +411,9 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                   <button
                     key={key}
                     onClick={() => setSynthesisObjective(key)}
-                    title={cfg.desc}
-                    className={`px-2.5 py-1 rounded text-xs flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                    className={`px-2.5 py-1.5 rounded text-xs flex items-center gap-1.5 whitespace-nowrap min-h-[32px] transition-colors ${
                       isSel
-                        ? 'bg-foreground text-background font-semibold'
+                        ? 'bg-foreground text-background font-semibold shadow-xs'
                         : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
                     }`}
                   >
@@ -384,15 +426,15 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
           </div>
 
           {/* Messages Scroll Area */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          <div className={`flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6 ${isMobile ? 'pb-24' : ''}`}>
             {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center max-w-xl mx-auto space-y-6 py-12">
-                <div className="w-12 h-12 rounded-lg bg-foreground text-background flex items-center justify-center font-mono font-bold text-lg">
+              <div className="h-full flex flex-col items-center justify-center text-center max-w-xl mx-auto space-y-5 py-6 sm:py-12 px-2">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-foreground text-background flex items-center justify-center font-mono font-bold text-base sm:text-lg">
                   N
                 </div>
 
-                <div className="space-y-2">
-                  <h2 className="font-display text-2xl font-bold tracking-tight">
+                <div className="space-y-1.5">
+                  <h2 className="font-display text-xl sm:text-2xl font-bold tracking-tight">
                     Document Intelligence Canvas
                   </h2>
                   <p className="text-xs text-muted-foreground leading-relaxed">
@@ -401,35 +443,35 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                 </div>
 
                 {/* Instant Catalysts */}
-                <div className="w-full space-y-2 text-left pt-4">
+                <div className="w-full space-y-2 text-left pt-2">
                   <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground block">
                     Instant Synthesis Catalysts:
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button
                       onClick={() => handlePresetClick('Draft an executive briefing summarizing top decisions, core findings, and next actions.')}
-                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs"
+                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs active:scale-[0.99]"
                     >
                       <span className="font-semibold block mb-0.5">Executive One-Pager</span>
                       <span className="text-[11px] text-muted-foreground">Summarize decisions & top findings</span>
                     </button>
                     <button
                       onClick={() => handlePresetClick('Extract all financial figures, dates, percentages, and KPIs into a structured markdown table.')}
-                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs"
+                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs active:scale-[0.99]"
                     >
                       <span className="font-semibold block mb-0.5">KPI & Table Extraction</span>
                       <span className="text-[11px] text-muted-foreground">Isolate numbers, dates & milestones</span>
                     </button>
                     <button
                       onClick={() => handlePresetClick('Audit the documents for risks, compliance liabilities, and non-standard covenants.')}
-                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs"
+                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs active:scale-[0.99]"
                     >
                       <span className="font-semibold block mb-0.5">Risk & Liability Audit</span>
                       <span className="text-[11px] text-muted-foreground">Examine legal & operational risks</span>
                     </button>
                     <button
                       onClick={() => handlePresetClick('Identify any contradictory statements or ambiguous clauses across the ingested files.')}
-                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs"
+                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs active:scale-[0.99]"
                     >
                       <span className="font-semibold block mb-0.5">Contradiction Detection</span>
                       <span className="text-[11px] text-muted-foreground">Flag factual divergence in text</span>
@@ -446,19 +488,19 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                     className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-3xl rounded-lg p-4 sm:p-5 space-y-3 ${
+                      className={`w-full sm:max-w-3xl rounded-lg p-3.5 sm:p-5 space-y-2.5 ${
                         isUser
-                          ? 'bg-foreground text-background ml-12'
-                          : 'bg-card border border-border text-foreground mr-12'
+                          ? 'bg-foreground text-background ml-4 sm:ml-12'
+                          : 'bg-card border border-border text-foreground mr-4 sm:mr-12'
                       }`}
                     >
                       <div className="flex items-center justify-between text-[10px] font-mono opacity-60 border-b border-current/10 pb-2">
                         <span>{isUser ? 'Inquiry' : `Synthesis (${msg.model_used || selectedModelId.split('/').pop()})`}</span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
                           <button
                             onClick={() => handleCopy(msg.id, msg.content)}
                             title="Copy text"
-                            className="hover:opacity-100 flex items-center gap-1"
+                            className="hover:opacity-100 flex items-center gap-1 p-1 min-h-[28px]"
                           >
                             {copiedId === msg.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                             <span>{copiedId === msg.id ? 'Copied' : 'Copy'}</span>
@@ -467,7 +509,7 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                             <button
                               onClick={() => handleExportMarkdown(msg.content)}
                               title="Download Markdown"
-                              className="hover:opacity-100 flex items-center gap-1"
+                              className="hover:opacity-100 flex items-center gap-1 p-1 min-h-[28px]"
                             >
                               <Download className="w-3 h-3" />
                               <span>MD</span>
@@ -476,15 +518,15 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                         </div>
                       </div>
 
-                      <div className={isUser ? 'text-sm font-medium leading-relaxed' : 'markdown-content'}>
+                      <div className={isUser ? 'text-xs sm:text-sm font-medium leading-relaxed' : 'markdown-content'}>
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {msg.content}
                         </ReactMarkdown>
                       </div>
 
-                      {/* Citations list if present */}
+                      {/* Citations */}
                       {!isUser && msg.sources && msg.sources.length > 0 && (
-                        <div className="pt-3 border-t border-border space-y-1.5">
+                        <div className="pt-2.5 border-t border-border space-y-1.5">
                           <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground block">
                             Grounding Citations ({msg.sources.length}):
                           </span>
@@ -493,13 +535,13 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                               <button
                                 key={i}
                                 onClick={() => setSelectedCitation(src)}
-                                className="px-2 py-1 rounded bg-secondary text-[11px] font-mono border border-border text-foreground hover:border-foreground/50 transition-colors flex items-center gap-1.5 truncate max-w-xs"
+                                className="px-2 py-1 rounded bg-secondary text-[11px] font-mono border border-border text-foreground hover:border-foreground/50 transition-colors flex items-center gap-1.5 truncate max-w-full sm:max-w-xs min-h-[28px]"
                               >
                                 <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                                 <span className="truncate">{src.document_name}</span>
                                 {src.distance !== undefined && (
                                   <span className="text-muted-foreground text-[9px]">
-                                    (D: {src.distance.toFixed(2)})
+                                    ({src.distance.toFixed(2)})
                                   </span>
                                 )}
                               </button>
@@ -515,7 +557,7 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
 
             {isSending && (
               <div className="flex justify-start">
-                <div className="max-w-md rounded-lg p-4 bg-card border border-border text-foreground space-y-2">
+                <div className="max-w-md rounded-lg p-3.5 bg-card border border-border text-foreground space-y-2">
                   <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
                     <span className="w-2 h-2 rounded-full bg-foreground animate-ping" />
                     <span>Executing Nearest Neighbor Retrieval & Frontier Inference...</span>
@@ -527,41 +569,38 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Bottom Query Input Box */}
-          <div className="p-4 border-t border-border bg-background">
-            <div className="max-w-4xl mx-auto rounded-lg border border-border bg-card p-2 focus-within:border-foreground transition-colors">
+          {/* Bottom Query Composer (Mobile: raised above bottom nav) */}
+          <div className={`p-3 sm:p-4 border-t border-border bg-background ${isMobile ? 'mb-14' : ''}`}>
+            <div className="max-w-4xl mx-auto rounded-lg border border-border bg-card p-2 focus-within:border-foreground transition-colors shadow-xs">
               <textarea
                 ref={textareaRef}
                 value={inputValue}
                 onChange={handleTextareaInput}
                 onKeyDown={handleKeyDown}
                 rows={1}
-                placeholder="Ask an analytical question or paste a document query..."
-                className="w-full bg-transparent text-foreground text-sm resize-none focus:outline-none px-2 py-1 placeholder:text-muted-foreground max-h-44"
+                placeholder="Ask a question or paste document text..."
+                className="w-full bg-transparent text-foreground text-xs sm:text-sm resize-none focus:outline-none px-2 py-1 placeholder:text-muted-foreground max-h-32 sm:max-h-44"
               />
               <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setDocVaultOpen(true)}
-                    className="flex items-center gap-1 hover:text-foreground transition-colors"
+                    className="flex items-center gap-1 hover:text-foreground transition-colors min-h-[32px] px-1"
                   >
                     <Paperclip className="w-3.5 h-3.5" />
-                    <span>Upload Documents</span>
+                    <span className="text-xs">Vault</span>
                   </button>
-                  <span>&bull;</span>
+                  <span className="text-muted-foreground">&bull;</span>
                   <span className="font-mono text-[10px]">
-                    {documents.length} doc{documents.length !== 1 ? 's' : ''} in context
+                    {documents.length} doc{documents.length !== 1 ? 's' : ''}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono hidden sm:inline text-muted-foreground">
-                    Shift+Enter for newline
-                  </span>
                   <button
                     onClick={handleSend}
                     disabled={!inputValue.trim() || isSending}
-                    className="px-3 py-1.5 rounded-md bg-foreground text-background font-semibold text-xs disabled:opacity-40 transition-opacity flex items-center gap-1.5"
+                    className="px-3.5 py-1.5 rounded-md bg-foreground text-background font-semibold text-xs disabled:opacity-40 transition-opacity flex items-center gap-1.5 min-h-[32px]"
                   >
                     <span>Synthesize</span>
                     <Send className="w-3 h-3" />
@@ -573,16 +612,48 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
         </main>
       </div>
 
-      {/* Document Vault Modal */}
+      {/* Mobile Bottom Navigation Bar (Rendered on phones < 768px) */}
+      {isMobile && (
+        <MobileBottomNav
+          activeTab={mobileTab}
+          onTabChange={handleMobileTabChange}
+          documentCount={documents.length}
+          sessionCount={sessions.length}
+          onNewSession={() => createSession()}
+        />
+      )}
+
+      {/* Mobile Model Sheet */}
+      <MobileModelSheet
+        isOpen={mobileModelOpen}
+        onClose={() => setMobileModelOpen(false)}
+        models={models}
+        selectedModelId={selectedModelId}
+        onSelectModel={setSelectedModelId}
+      />
+
+      {/* Mobile Sessions Sheet */}
+      <MobileSessionsSheet
+        isOpen={mobileSessionsOpen}
+        onClose={() => setMobileSessionsOpen(false)}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={selectSession}
+        onCreateSession={() => createSession()}
+        onDeleteSession={deleteSession}
+      />
+
+      {/* Document Vault Modal / Sheet */}
       <DocumentVaultModal
         isOpen={docVaultOpen}
         onClose={() => setDocVaultOpen(false)}
         documents={documents}
         onUpload={uploadDocument}
         onDelete={deleteDocument}
+        isUploading={isUploading}
       />
 
-      {/* Slide-out Citation Drawer */}
+      {/* Responsive Citation Drawer */}
       <CitationDrawer
         citation={selectedCitation}
         onClose={() => setSelectedCitation(null)}
