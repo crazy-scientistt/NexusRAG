@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Toaster } from '@/components/ui/sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
@@ -50,7 +51,12 @@ export default function App() {
 
   // Workspace has its own full-screen canvas
   if (currentPage === 'workspace') {
-    return <WorkspacePage onBack={() => setCurrentPage('landing')} />;
+    return (
+      <>
+        <WorkspacePage onBack={() => setCurrentPage('landing')} />
+        <Toaster />
+      </>
+    );
   }
 
   return (
@@ -90,6 +96,7 @@ export default function App() {
       </div>
 
       <Footer onNavigate={navigate} />
+      <Toaster />
     </div>
   );
 }

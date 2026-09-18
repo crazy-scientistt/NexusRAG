@@ -25,6 +25,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSession } from '@/hooks/useSession';
@@ -191,7 +192,17 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
   const handleUploadFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     for (let i = 0; i < files.length; i++) {
-      await uploadDocument(files[i]);
+      try {
+        await uploadDocument(files[i]);
+      } catch (err) {
+        // Surface the reason and keep going: uploadDocument rethrows, so an
+        // unsupported file used to escape as an unhandled rejection and abort
+        // the rest of the batch.
+        const detail =
+          (err as { detail?: string })?.detail ||
+          (err instanceof Error ? err.message : 'Upload failed');
+        toast.error(`Could not upload ${files[i].name}`, { description: detail });
+      }
     }
   };
 

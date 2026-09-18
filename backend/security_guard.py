@@ -36,6 +36,8 @@ MAX_FILE_BYTES = 25 * 1024 * 1024  # 25MB
 ALLOWED_UPLOAD_EXTENSIONS = {
     ".pdf",
     ".txt",
+    ".md",
+    ".csv",
     ".docx",
     ".png",
     ".jpg",
