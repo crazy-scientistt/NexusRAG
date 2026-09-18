@@ -57,20 +57,20 @@ PREFERRED_VENDORS = (
 # the live fetch is what keeps the catalog current.
 FALLBACK_MODELS: List[Dict[str, Any]] = [
     {
-        "id": "openrouter/free",
-        "name": "Free Models Router",
-        "provider": "OpenRouter",
-        "context_length": 200000,
-        "description": "Automatically routes to an available free model.",
-        "badge": "Recommended / Always Free",
-        "is_default": True,
-    },
-    {
         "id": "google/gemma-4-31b-it:free",
         "name": "Gemma 4 31B",
         "provider": "Google",
         "context_length": 262144,
         "description": "Google DeepMind multimodal instruct model. Free tier.",
+        "badge": "Recommended / Always Free",
+        "is_default": True,
+    },
+    {
+        "id": "openrouter/free",
+        "name": "Free Models Router",
+        "provider": "OpenRouter",
+        "context_length": 200000,
+        "description": "Routes to whichever free model is available. Output varies.",
         "badge": "Free",
         "is_default": False,
     },
@@ -121,7 +121,11 @@ def _rank(model: Dict[str, Any]) -> tuple:
     """Preferred vendors first, then the widest context window."""
     model_id = (model.get("id") or "").lower()
     if model_id == "openrouter/free":
-        vendor_rank = -1  # the router is the safest default, so it leads
+        # Keep the router available but never let it lead. It picks a free model
+        # per request and can land on a classifier: asked for three benefits of
+        # RAG it once answered "User Safety: safe", which is a content-safety
+        # model's output format. A named model is predictable.
+        vendor_rank = len(PREFERRED_VENDORS) + 1
     else:
         vendor = model_id.split("/")[0]
         vendor_rank = (
