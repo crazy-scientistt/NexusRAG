@@ -22,6 +22,7 @@ try:
         sys.stdout.reconfigure(encoding='utf-8')
 except Exception:
     pass
+import json
 import shutil
 import uuid
 from datetime import datetime, timedelta
@@ -42,6 +43,7 @@ from fastapi import (
     Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from auth import get_current_user
@@ -98,6 +100,9 @@ app.add_middleware(
 # Single RAG instance to maintain state
 rag_instance: Optional[CloudRAG] = None
 
+# Prior turns replayed into the prompt so follow-up questions resolve.
+CHAT_HISTORY_TURNS = 12
+
 BASE_DIR = Path(__file__).parent.parent
 is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 default_upload = Path("/tmp/uploads") if is_serverless else (BASE_DIR / "uploads")
@@ -129,6 +134,7 @@ class QueryResponse(BaseModel):
     model_used: Optional[str] = None
     retrieval_ms: int
     generation_ms: int
+    evidence: Optional[dict] = None
 
 
 def _safe_filename(filename: str) -> str:
@@ -337,6 +343,8 @@ async def create_message(
             metadata={"target": payload.replace_message_id},
         )
 
+    history = list_messages(session_id, limit=CHAT_HISTORY_TURNS)
+
     user_msg_id = add_message(
         session_id,
         role="user",
@@ -351,6 +359,7 @@ async def create_message(
         mode=payload.mode,
         explain_simpler=payload.explain_simpler,
         model=validated_model,
+        history=history,
     )
 
     assistant_metadata = {
@@ -358,6 +367,8 @@ async def create_message(
         "mode": payload.mode,
         "model_used": result.get("model_used"),
         "confidence": result.get("confidence"),
+        "sources": result.get("sources", []),
+        "evidence": result.get("evidence"),
     }
 
     add_message(
@@ -369,6 +380,87 @@ async def create_message(
     )
 
     return result
+
+
+@api_router.post("/sessions/{session_id}/messages/stream")
+async def create_message_stream(
+    session_id: str,
+    payload: MessageRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Same as create_message, but streams the answer as server-sent events.
+
+    Event types: retrieval (sources found), token (a text delta), done (the final
+    record including per-sentence evidence), error. The assistant turn is persisted
+    once the stream completes, so history stays identical to the non-streaming path.
+    """
+    _ensure_user(user)
+    _ensure_session(session_id, user["uid"])
+
+    client_ip = get_client_ip(request)
+    rate_limiter.check_chat(client_ip)
+    sanitized_question = validate_question(payload.question)
+    validated_model = validate_model(
+        payload.model, resolve_default_model(config.OPENROUTER_MODEL)
+    )
+
+    upsert_user(user["uid"], user.get("email", ""))
+
+    # Read history before the new turn is stored so the question is not duplicated.
+    history = list_messages(session_id, limit=CHAT_HISTORY_TURNS)
+
+    user_msg_id = add_message(session_id, role="user", content=sanitized_question)
+
+    rag = _get_rag()
+
+    def event_stream():
+        final = None
+        try:
+            for event in rag.query_stream(
+                question=sanitized_question,
+                user_id=user["uid"],
+                session_id=session_id,
+                mode=payload.mode,
+                explain_simpler=payload.explain_simpler,
+                model=validated_model,
+                history=history,
+            ):
+                if event.get("type") == "done":
+                    final = event
+                yield "data: " + json.dumps(event) + "\n\n"
+        except Exception as exc:
+            yield "data: " + json.dumps({"type": "error", "detail": str(exc)}) + "\n\n"
+            return
+
+        if final:
+            try:
+                add_message(
+                    session_id,
+                    role="assistant",
+                    content=final["response"],
+                    metadata={
+                        "supported_by_documents": final["supported_by_documents"],
+                        "mode": final["mode"],
+                        "model_used": final.get("model_used"),
+                        "confidence": final.get("confidence"),
+                        "sources": final.get("sources", []),
+                        "evidence": final.get("evidence"),
+                    },
+                    parent_id=user_msg_id,
+                )
+            except Exception as exc:
+                print(f"[WARN] Could not persist streamed message: {exc}")
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @api_router.patch("/sessions/{session_id}/messages/{message_id}/pin")

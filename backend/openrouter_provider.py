@@ -16,6 +16,7 @@
 OpenRouter LLM Provider for NexusRAG.
 Provides unified access to Google Gemini, Anthropic Claude, Meta Llama, DeepSeek, and OpenAI models.
 """
+import json
 import os
 import time
 import requests
@@ -202,6 +203,96 @@ class OpenRouterLLM:
             if self.api_key and self.api_key in msg:
                 msg = msg.replace(self.api_key, "[REDACTED]")
             return f"❌ Error invoking OpenRouter: {msg}"
+
+    def generate_stream(
+        self,
+        messages: List[Dict[str, str]],
+        model_name: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ):
+        """Yield content deltas from OpenRouter as they arrive.
+
+        Takes a full messages array rather than a single prompt, so the caller can
+        include prior turns. Errors are yielded as text the same way generate()
+        returns them, so the reader sees the reason inline instead of a silence.
+        """
+        active_model = model_name or self.default_model
+        active_temp = temperature if temperature is not None else self.temperature
+        HARD_TOKEN_CAP = 1500
+        active_max = min(max_tokens if max_tokens is not None else self.max_tokens, HARD_TOKEN_CAP)
+
+        payload = {
+            "model": active_model,
+            "messages": messages,
+            "temperature": active_temp,
+            "max_tokens": active_max,
+            "stream": True,
+        }
+
+        try:
+            with requests.post(
+                self.api_url,
+                headers=self.headers,
+                json=payload,
+                timeout=90,
+                stream=True,
+            ) as response:
+                if response.status_code != 200:
+                    yield self._stream_error(response, active_model)
+                    return
+
+                for raw_line in response.iter_lines(decode_unicode=True):
+                    if not raw_line or not raw_line.startswith("data:"):
+                        continue
+                    data = raw_line[5:].strip()
+                    if data == "[DONE]":
+                        return
+                    try:
+                        chunk = json.loads(data)
+                    except ValueError:
+                        continue
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = (choices[0].get("delta") or {}).get("content")
+                    if delta:
+                        yield delta
+
+        except requests.exceptions.Timeout:
+            yield f"\n\n[X] OpenRouter request timed out for model '{active_model}'."
+        except requests.exceptions.ConnectionError:
+            yield "\n\n[X] OpenRouter connection error. Check your internet connection."
+        except Exception as exc:
+            yield f"\n\n[X] Error invoking OpenRouter: {self._redact(str(exc))}"
+
+    def _redact(self, text: str) -> str:
+        """Never let the API key reach a response body."""
+        if self.api_key and self.api_key in text:
+            return text.replace(self.api_key, "[REDACTED]")
+        return text
+
+    def _stream_error(self, response, active_model: str) -> str:
+        """Same wording as generate(), so both paths read alike."""
+        if response.status_code == 401:
+            return (
+                "❌ OpenRouter Authentication Error: Invalid API key.\n"
+                "Please check your OPENROUTER_API_KEY environment variable."
+            )
+        if response.status_code == 402:
+            return (
+                "❌ OpenRouter Insufficient Credits: Your OpenRouter account requires credits.\n"
+                "Please visit https://openrouter.ai/credits to top up."
+            )
+        if response.status_code == 429:
+            return "⏳ OpenRouter Rate Limit: Too many requests. Please wait a few seconds and retry."
+        if response.status_code == 503:
+            return f"⏳ Model '{active_model}' is currently overloaded. Please try again or switch models."
+        try:
+            err = response.json().get("error", {}).get("message", response.text)
+        except Exception:
+            err = response.text
+        return f"❌ OpenRouter API Error ({response.status_code}): {self._redact(err)}"
 
     def get_info(self) -> Dict[str, Any]:
         """Return provider metadata."""
