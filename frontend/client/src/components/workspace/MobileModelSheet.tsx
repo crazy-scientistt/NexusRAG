@@ -21,7 +21,7 @@ export function MobileModelSheet({
   if (!isOpen) return null;
 
   const formatContext = (len?: number) => {
-    if (!len) return '128K';
+    if (!len) return '--';
     if (len >= 1000000) return `${(len / 1000000).toFixed(1)}M`;
     return `${Math.round(len / 1000)}K`;
   };

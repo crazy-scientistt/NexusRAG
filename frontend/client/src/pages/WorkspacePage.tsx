@@ -126,7 +126,20 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
       try {
         const data = await apiClient.getModels();
         if (data && data.models && data.models.length > 0) {
-          setModels(data.models);
+          const catalog = [...data.models];
+          // OPENROUTER_MODEL can name a model outside the curated catalog. Surface it
+          // rather than silently displaying whichever model happens to be listed first.
+          if (data.active_model && !catalog.some((m) => m.id === data.active_model)) {
+            catalog.unshift({
+              id: data.active_model,
+              name: data.active_model.split('/').pop() || data.active_model,
+              provider: 'OpenRouter',
+              context_length: 0,
+              description: 'Configured via OPENROUTER_MODEL.',
+              badge: 'Custom',
+            });
+          }
+          setModels(catalog);
           if (data.active_model) {
             setSelectedModelId(data.active_model);
           }
