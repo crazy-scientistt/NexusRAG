@@ -1,19 +1,18 @@
 {
-  "framework": "vite",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.py" },
-    { "source": "/api", "destination": "/api/index.py" },
-    { "source": "/health", "destination": "/api/index.py" },
-    { "source": "/me", "destination": "/api/index.py" },
-    { "source": "/stats", "destination": "/api/index.py" },
-    { "source": "/models", "destination": "/api/index.py" },
-    { "source": "/sessions", "destination": "/api/index.py" },
-    { "source": "/sessions/(.*)", "destination": "/api/index.py" },
-    { "source": "/upload", "destination": "/api/index.py" },
-    { "source": "/documents", "destination": "/api/index.py" },
-    { "source": "/documents/(.*)", "destination": "/api/index.py" },
-    { "source": "/clear", "destination": "/api/index.py" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/api", "destination": "/api/index" },
+    { "source": "/health", "destination": "/api/index" },
+    { "source": "/me", "destination": "/api/index" },
+    { "source": "/stats", "destination": "/api/index" },
+    { "source": "/models", "destination": "/api/index" },
+    { "source": "/sessions", "destination": "/api/index" },
+    { "source": "/sessions/(.*)", "destination": "/api/index" },
+    { "source": "/upload", "destination": "/api/index" },
+    { "source": "/documents", "destination": "/api/index" },
+    { "source": "/documents/(.*)", "destination": "/api/index" },
+    { "source": "/clear", "destination": "/api/index" },
+    { "source": "/((?!api|health|me|stats|models|sessions|upload|documents|clear).*)", "destination": "/index.html" }
   ]
 }
