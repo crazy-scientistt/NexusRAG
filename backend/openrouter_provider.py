@@ -21,6 +21,8 @@ import time
 import requests
 from typing import Optional, Dict, List, Any
 
+from free_models import get_models
+
 # Curated list of high-efficiency models available on OpenRouter
 CURATED_MODELS = [
     {
@@ -209,5 +211,5 @@ class OpenRouterLLM:
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "endpoint": "https://openrouter.ai/api/v1",
-            "available_models": CURATED_MODELS,
+            "available_models": get_models(),
         }

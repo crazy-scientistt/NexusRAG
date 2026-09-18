@@ -21,10 +21,11 @@ import time
 from collections import defaultdict, deque
 from typing import Dict, Deque, Optional
 from fastapi import Request, HTTPException, UploadFile
-from openrouter_provider import CURATED_MODELS
+from free_models import get_allowed_model_ids
 
-# 1. Model Whitelisting: ONLY vetted models from CURATED_MODELS are allowed
-ALLOWED_MODEL_IDS = {m["id"] for m in CURATED_MODELS}
+# 1. Model whitelisting: only the free models currently offered by OpenRouter.
+# Resolved per call rather than at import so a refreshed catalog takes effect
+# without a redeploy.
 
 # 2. Token & Input Size Constraints
 MAX_QUESTION_LENGTH = 1500  # Max chars per query (prevents token stuffing)
@@ -162,8 +163,9 @@ def validate_model(model: Optional[str], default_model: str) -> str:
     if not model:
         return default_model
 
-    if model not in ALLOWED_MODEL_IDS:
-        allowed = ", ".join(sorted(ALLOWED_MODEL_IDS))
+    allowed_ids = get_allowed_model_ids()
+    if model not in allowed_ids:
+        allowed = ", ".join(sorted(allowed_ids))
         raise HTTPException(
             status_code=400,
             detail=f"Model '{model}' is not permitted. Permitted models are: {allowed}.",

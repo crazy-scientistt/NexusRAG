@@ -18,7 +18,8 @@ Unified LLM Provider: Supports OpenRouter (Primary) and HuggingFace Inference Pr
 import os
 import requests
 from typing import Optional, Dict, Any
-from openrouter_provider import OpenRouterLLM, CURATED_MODELS
+from openrouter_provider import OpenRouterLLM
+from free_models import get_models, resolve_default_model
 
 
 class HuggingFaceLLM:
@@ -109,7 +110,7 @@ class FallbackOfflineLLM:
         return {
             "type": "OfflineFallback",
             "model": self.model_name,
-            "available_models": CURATED_MODELS,
+            "available_models": get_models(),
         }
 
 
@@ -124,7 +125,7 @@ def create_llm(
     if openrouter_api_key:
         return OpenRouterLLM(
             api_key=openrouter_api_key,
-            default_model=model_name or "google/gemini-2.0-flash-001",
+            default_model=resolve_default_model(model_name),
             max_tokens=max_tokens,
             temperature=temperature,
         )

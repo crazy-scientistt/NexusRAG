@@ -65,7 +65,7 @@ from db_supabase import (
     clone_session,
 )
 from rag_system import CloudRAG
-from openrouter_provider import CURATED_MODELS
+from free_models import get_models as get_free_models, resolve_default_model
 from security_guard import (
     rate_limiter,
     get_client_ip,
@@ -235,8 +235,8 @@ async def get_stats(user=Depends(get_current_user)):
 async def get_models(user=Depends(get_current_user)):
     _ensure_user(user)
     return {
-        "active_model": config.OPENROUTER_MODEL,
-        "models": CURATED_MODELS,
+        "active_model": resolve_default_model(config.OPENROUTER_MODEL),
+        "models": get_free_models(),
         "has_openrouter_key": bool(config.OPENROUTER_API_KEY),
     }
 

@@ -27,7 +27,7 @@ from document_loader import DocumentLoader
 from embeddings_provider import create_embeddings
 from llm_provider import create_llm
 from vector_store import VectorStore
-from openrouter_provider import CURATED_MODELS
+from free_models import get_models, resolve_default_model
 
 
 class CloudRAG:
@@ -148,7 +148,7 @@ class CloudRAG:
         """
         Execute RAG retrieval and synthesis with optional dynamic model selection.
         """
-        active_model = model or self.config.OPENROUTER_MODEL
+        active_model = model or resolve_default_model(self.config.OPENROUTER_MODEL)
         print(f"\n[QUERY] '{question}' [Model: {active_model}, Mode: {mode}]")
 
         where = {"user_id": user_id}
@@ -286,11 +286,11 @@ Response:"""
     def get_stats(self) -> dict:
         """Get system statistics."""
         return {
-            "model": self.config.OPENROUTER_MODEL,
+            "model": resolve_default_model(self.config.OPENROUTER_MODEL),
             "embedding_model": self.config.EMBEDDING_MODEL,
             "documents": self.vector_store.count(),
             "chunk_size": self.config.CHUNK_SIZE,
             "top_k": self.config.TOP_K_RESULTS,
-            "available_models": CURATED_MODELS,
+            "available_models": get_models(),
             "has_openrouter_key": bool(self.config.OPENROUTER_API_KEY),
         }
