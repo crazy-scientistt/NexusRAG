@@ -16,14 +16,27 @@
 ChromaDB Vector Store
 Stores and retrieves document embeddings
 """
-from typing import List, Dict, Any, Optional
+import sys
+try:
+    __import__('pysqlite3')
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass
 
-import chromadb
-from chromadb.config import Settings
+from typing import List, Dict, Any, Optional
+import numpy as np
+
+try:
+    import chromadb
+    from chromadb.config import Settings
+    HAS_CHROMADB = True
+except Exception as _chroma_err:
+    print(f"[WARN] ChromaDB import error: {_chroma_err}")
+    HAS_CHROMADB = False
 
 
 class VectorStore:
-    """ChromaDB vector store for document retrieval."""
+    """ChromaDB vector store with in-memory fallback for serverless environments."""
 
     def __init__(
         self,
@@ -31,18 +44,42 @@ class VectorStore:
         persist_directory: str,
         embedding_function,
     ):
-        self.client = chromadb.PersistentClient(
-            path=persist_directory, settings=Settings(anonymized_telemetry=False)
-        )
-
-        self.collection = self.client.get_or_create_collection(
-            name=collection_name, metadata={"hnsw:space": "cosine"}
-        )
-
+        self.collection_name = collection_name
         self.embedding_function = embedding_function
+        self.client = None
+        self.collection = None
+        self.is_fallback = False
+        self._memory_docs: List[Dict[str, Any]] = []
 
-        print(f"[OK] Vector store initialized: {collection_name}")
-        print(f"   Documents: {self.collection.count()}")
+        if HAS_CHROMADB:
+            # Tier 1: PersistentClient
+            try:
+                self.client = chromadb.PersistentClient(
+                    path=persist_directory, settings=Settings(anonymized_telemetry=False)
+                )
+                self.collection = self.client.get_or_create_collection(
+                    name=collection_name, metadata={"hnsw:space": "cosine"}
+                )
+                print(f"[OK] ChromaDB PersistentClient ready: {collection_name}")
+            except Exception as p_err:
+                print(f"[WARN] Chroma PersistentClient failed ({p_err}). Trying EphemeralClient...")
+                # Tier 2: EphemeralClient (in-memory Chroma)
+                try:
+                    self.client = chromadb.EphemeralClient(settings=Settings(anonymized_telemetry=False))
+                    self.collection = self.client.get_or_create_collection(
+                        name=collection_name, metadata={"hnsw:space": "cosine"}
+                    )
+                    print(f"[OK] ChromaDB EphemeralClient ready: {collection_name}")
+                except Exception as e_err:
+                    print(f"[WARN] Chroma EphemeralClient failed ({e_err}). Using In-Memory fallback.")
+                    self.is_fallback = True
+        else:
+            self.is_fallback = True
+
+        if self.is_fallback:
+            print(f"[OK] Pure In-Memory Vector Store ready: {collection_name}")
+        elif self.collection:
+            print(f"[OK] Vector store initialized: {collection_name} (Documents: {self.collection.count()})")
 
     def add_documents(self, texts: List[str], metadatas: List[Dict[str, Any]]):
         if not texts:
@@ -61,6 +98,17 @@ class VectorStore:
             return
 
         texts, metadatas, embeddings = zip(*filtered)
+
+        if self.is_fallback or not self.collection:
+            for text, meta, emb in zip(texts, metadatas, embeddings):
+                self._memory_docs.append({
+                    "id": (meta.get("doc_id") or "doc") + f"_{meta.get('chunk_index', len(self._memory_docs))}",
+                    "content": text,
+                    "metadata": meta,
+                    "embedding": emb,
+                })
+            print(f"[OK] Added/Updated {len(texts)} documents in in-memory vector store")
+            return
 
         current_count = self.collection.count()
         ids = [
@@ -109,6 +157,39 @@ class VectorStore:
         if not query_embedding:
             return []
 
+        if self.is_fallback or not self.collection:
+            if not self._memory_docs:
+                return []
+            q_emb = np.array(query_embedding, dtype=float)
+            norm_q = np.linalg.norm(q_emb)
+            if norm_q > 0:
+                q_emb = q_emb / norm_q
+            scored = []
+            for item in self._memory_docs:
+                meta = item["metadata"]
+                if where:
+                    match = True
+                    conds = where.get("$and", [where]) if "$and" in where else [where]
+                    for c in conds:
+                        for k, v in c.items():
+                            target = v.get("$eq", v) if isinstance(v, dict) else v
+                            if meta.get(k) != target:
+                                match = False
+                                break
+                        if not match:
+                            break
+                    if not match:
+                        continue
+                d_emb = np.array(item["embedding"], dtype=float)
+                norm_d = np.linalg.norm(d_emb)
+                sim = float(np.dot(q_emb, d_emb) / (norm_d + 1e-9)) if norm_d > 0 else 0.0
+                scored.append((max(0.0, 1.0 - sim), item))
+            scored.sort(key=lambda x: x[0])
+            return [
+                {"content": item["content"], "metadata": item["metadata"], "distance": dist}
+                for dist, item in scored[:top_k]
+            ]
+
         normalized_where = self._normalize_where(where)
         results = self.collection.query(
             query_embeddings=[query_embedding], n_results=top_k, where=normalized_where
@@ -132,6 +213,10 @@ class VectorStore:
         return documents
 
     def clear(self):
+        if self.is_fallback or not self.client:
+            self._memory_docs = []
+            print("[OK] In-memory vector store cleared")
+            return
         self.client.delete_collection(self.collection.name)
         self.collection = self.client.get_or_create_collection(
             name=self.collection.name, metadata={"hnsw:space": "cosine"}
@@ -139,12 +224,28 @@ class VectorStore:
         print("[OK] Vector store cleared")
 
     def delete_by_doc_id(self, doc_id: str):
+        if self.is_fallback or not self.collection:
+            self._memory_docs = [d for d in self._memory_docs if d["metadata"].get("doc_id") != doc_id]
+            print(f"[OK] Removed in-memory vectors for doc_id={doc_id}")
+            return
         self.collection.delete(where=self._normalize_where({"doc_id": doc_id}))
         print(f"[OK] Removed vectors for doc_id={doc_id}")
 
     def delete_where(self, where: Dict[str, Any]):
+        if self.is_fallback or not self.collection:
+            rem = []
+            for d in self._memory_docs:
+                meta = d["metadata"]
+                match = all(meta.get(k) == v for k, v in where.items())
+                if not match:
+                    rem.append(d)
+            self._memory_docs = rem
+            print(f"[OK] Removed in-memory vectors matching {where}")
+            return
         self.collection.delete(where=self._normalize_where(where))
         print(f"[OK] Removed vectors matching {where}")
 
     def count(self) -> int:
+        if self.is_fallback or not self.collection:
+            return len(self._memory_docs)
         return self.collection.count()

@@ -2,7 +2,24 @@
   "buildCommand": "cd frontend && npm install --legacy-peer-deps && npm run build",
   "outputDirectory": "frontend/dist",
   "framework": "vite",
+  "functions": {
+    "api/index.py": {
+      "memory": 1024
+    }
+  },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
+    { "source": "/api", "destination": "/api/index.py" },
+    { "source": "/health", "destination": "/api/index.py" },
+    { "source": "/me", "destination": "/api/index.py" },
+    { "source": "/stats", "destination": "/api/index.py" },
+    { "source": "/models", "destination": "/api/index.py" },
+    { "source": "/sessions", "destination": "/api/index.py" },
+    { "source": "/sessions/(.*)", "destination": "/api/index.py" },
+    { "source": "/upload", "destination": "/api/index.py" },
+    { "source": "/documents", "destination": "/api/index.py" },
+    { "source": "/documents/(.*)", "destination": "/api/index.py" },
+    { "source": "/clear", "destination": "/api/index.py" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -39,7 +39,8 @@ class Config:
     TEMPERATURE: float = float(os.getenv("TEMPERATURE", "0.4"))
     
     # Vector Database
-    VECTOR_DB_DIR: str = os.getenv("VECTOR_DB_DIR", "./data/chroma")
+    is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+    VECTOR_DB_DIR: str = os.getenv("VECTOR_DB_DIR", "/tmp/chroma" if is_serverless else "./data/chroma")
     COLLECTION_NAME: str = os.getenv("COLLECTION_NAME", "rag_knowledge")
     
     # Document Processing
@@ -54,7 +55,7 @@ class Config:
     TEMP_DOC_TTL_MIN: int = int(os.getenv("TEMP_DOC_TTL_MIN", "1440"))  # 24h
     
     # Persistence
-    DB_PATH: str = os.getenv("DB_PATH", "./data/rag.db")
+    DB_PATH: str = os.getenv("DB_PATH", "/tmp/rag.db" if is_serverless else "./data/rag.db")
     
     # RAG behavior
     DEFAULT_STRICT: bool = os.getenv("DEFAULT_STRICT", "false").lower() == "true"

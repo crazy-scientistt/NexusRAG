@@ -30,6 +30,7 @@ from typing import List, Optional
 
 from fastapi import (
     FastAPI,
+    APIRouter,
     UploadFile,
     File,
     HTTPException,
@@ -89,8 +90,10 @@ app.add_middleware(
 rag_instance: Optional[CloudRAG] = None
 
 BASE_DIR = Path(__file__).parent.parent
-UPLOAD_DIR = BASE_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+default_upload = Path("/tmp/uploads") if is_serverless else (BASE_DIR / "uploads")
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(default_upload)))
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class SessionCreateRequest(BaseModel):
@@ -158,58 +161,68 @@ def _delete_file(path: Path):
         print(f"[WARN] Failed to delete file {path}: {exc}")
 
 
+api_router = APIRouter()
+
+
 def _get_rag() -> CloudRAG:
-    if not rag_instance:
-        raise HTTPException(status_code=503, detail="RAG system not initialized")
+    global rag_instance
+    if rag_instance is None:
+        try:
+            init_db()
+            rag_instance = CloudRAG()
+        except Exception as exc:
+            print(f"[ERROR] Failed to initialize RAG system: {exc}")
+            raise HTTPException(
+                status_code=503,
+                detail=f"RAG system initialization failed: {str(exc)}"
+            )
     return rag_instance
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize RAG system and database on startup."""
-    global rag_instance  # pylint: disable=global-statement
-    rag_instance = CloudRAG()
-    init_db()
-    print("[OK] Database ready")
+    """Initialize database and clean expired documents."""
+    global rag_instance
+    try:
+        init_db()
+        print("[OK] Database ready")
+    except Exception as exc:
+        print(f"[WARN] Database init in startup_event: {exc}")
 
-    # Clean expired temp docs and stale sessions
-    expired = cleanup_expired_documents()
-    for row in expired:
-        try:
-            rag_instance.vector_store.delete_by_doc_id(row["id"])
-        except Exception as exc:  # pylint: disable=broad-except
-            print(f"Failed to delete vectors for {row['id']}: {exc}")
-        _delete_file(Path(row["stored_path"]))
-
-    old = cleanup_old_sessions(days=30)
-    for sess in old.get("sessions", []):
-        try:
-            rag_instance.clear_session_data(sess["user_id"], sess["id"])
-        except Exception as exc:  # pylint: disable=broad-except
-            print(f"Failed to clear vectors for stale session {sess['id']}: {exc}")
-    for doc in old.get("documents", []):
-        _delete_file(Path(doc["stored_path"]))
+    try:
+        expired = cleanup_expired_documents()
+        for row in expired:
+            _delete_file(Path(row.get("stored_path", "")))
+    except Exception as exc:
+        print(f"[WARN] Document cleanup in startup: {exc}")
 
 
 @app.get("/")
+@app.get("/api")
 async def root():
     return {"status": "online", "message": "Cloud RAG API"}
 
 
-@app.get("/me")
+@app.get("/health")
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
+
+
+@api_router.get("/me")
 async def me(user=Depends(get_current_user)):
     _ensure_user(user)
     return user
 
 
-@app.get("/stats")
+@api_router.get("/stats")
 async def get_stats(user=Depends(get_current_user)):
     _ensure_user(user)
     rag = _get_rag()
     return rag.get_stats()
 
 
-@app.get("/models")
+@api_router.get("/models")
 async def get_models(user=Depends(get_current_user)):
     _ensure_user(user)
     return {
@@ -219,7 +232,7 @@ async def get_models(user=Depends(get_current_user)):
     }
 
 
-@app.post("/sessions")
+@api_router.post("/sessions")
 async def create_user_session(payload: SessionCreateRequest, user=Depends(get_current_user)):
     _ensure_user(user)
     upsert_user(user["uid"], user.get("email", ""))
@@ -236,13 +249,13 @@ async def create_user_session(payload: SessionCreateRequest, user=Depends(get_cu
     return {"id": session_id, "name": name}
 
 
-@app.get("/sessions")
+@api_router.get("/sessions")
 async def list_user_sessions(user=Depends(get_current_user)):
     _ensure_user(user)
     return list_sessions(user["uid"])
 
 
-@app.patch("/sessions/{session_id}")
+@api_router.patch("/sessions/{session_id}")
 async def rename_user_session(session_id: str, payload: SessionCreateRequest, user=Depends(get_current_user)):
     _ensure_user(user)
     if not payload.name:
@@ -251,7 +264,7 @@ async def rename_user_session(session_id: str, payload: SessionCreateRequest, us
     return {"status": "ok"}
 
 
-@app.post("/sessions/{session_id}/clone")
+@api_router.post("/sessions/{session_id}/clone")
 async def clone_user_session(session_id: str, user=Depends(get_current_user)):
     _ensure_user(user)
     new_id = clone_session(session_id, user["uid"])
@@ -260,7 +273,7 @@ async def clone_user_session(session_id: str, user=Depends(get_current_user)):
     return {"id": new_id}
 
 
-@app.delete("/sessions/{session_id}")
+@api_router.delete("/sessions/{session_id}")
 async def delete_user_session(session_id: str, user=Depends(get_current_user)):
     _ensure_user(user)
     _ensure_session(session_id, user["uid"])
@@ -272,14 +285,14 @@ async def delete_user_session(session_id: str, user=Depends(get_current_user)):
     return {"status": "deleted"}
 
 
-@app.get("/sessions/{session_id}/messages")
+@api_router.get("/sessions/{session_id}/messages")
 async def get_messages(session_id: str, user=Depends(get_current_user)):
     _ensure_user(user)
     _ensure_session(session_id, user["uid"])
     return list_messages(session_id)
 
 
-@app.post("/sessions/{session_id}/messages", response_model=QueryResponse)
+@api_router.post("/sessions/{session_id}/messages", response_model=QueryResponse)
 async def create_message(
     session_id: str,
     payload: MessageRequest,
@@ -335,7 +348,7 @@ async def create_message(
     return result
 
 
-@app.patch("/sessions/{session_id}/messages/{message_id}/pin")
+@api_router.patch("/sessions/{session_id}/messages/{message_id}/pin")
 async def pin_message(session_id: str, message_id: str, pinned: bool = Query(True), user=Depends(get_current_user)):
     _ensure_user(user)
     _ensure_session(session_id, user["uid"])
@@ -343,7 +356,7 @@ async def pin_message(session_id: str, message_id: str, pinned: bool = Query(Tru
     return {"status": "ok", "pinned": pinned}
 
 
-@app.get("/sessions/{session_id}/export")
+@api_router.get("/sessions/{session_id}/export")
 async def export_session(session_id: str, user=Depends(get_current_user)):
     _ensure_user(user)
     _ensure_session(session_id, user["uid"])
@@ -360,7 +373,7 @@ async def export_session(session_id: str, user=Depends(get_current_user)):
     return Response("\n".join(lines), media_type="text/markdown")
 
 
-@app.post("/upload")
+@api_router.post("/upload")
 async def upload_document(
     background_tasks: BackgroundTasks,
     session_id: str = Form(...),
@@ -452,14 +465,14 @@ async def upload_document(
         file.file.close()
 
 
-@app.get("/documents")
+@api_router.get("/documents")
 async def get_documents(session_id: Optional[str] = None, user=Depends(get_current_user)):
     _ensure_user(user)
     docs = list_documents(user["uid"], session_id=session_id)
     return docs
 
 
-@app.get("/documents/{doc_id}/preview")
+@api_router.get("/documents/{doc_id}/preview")
 async def preview_document(doc_id: str, user=Depends(get_current_user)):
     _ensure_user(user)
     doc = get_document(doc_id, user["uid"])
@@ -481,7 +494,7 @@ async def preview_document(doc_id: str, user=Depends(get_current_user)):
     }
 
 
-@app.delete("/documents/{doc_id}")
+@api_router.delete("/documents/{doc_id}")
 async def remove_document(doc_id: str, user=Depends(get_current_user)):
     _ensure_user(user)
     doc = get_document(doc_id, user["uid"])
@@ -497,7 +510,7 @@ async def remove_document(doc_id: str, user=Depends(get_current_user)):
     return {"status": "deleted"}
 
 
-@app.delete("/clear")
+@api_router.delete("/clear")
 async def clear_user_data(user=Depends(get_current_user)):
     """Clear all documents, vectors, and sessions for the user."""
     _ensure_user(user)
@@ -510,6 +523,11 @@ async def clear_user_data(user=Depends(get_current_user)):
     # remove files
     shutil.rmtree(UPLOAD_DIR / user["uid"], ignore_errors=True)
     return {"status": "success", "message": "User data cleared"}
+
+
+# Mount all endpoints under both root and /api prefixes for seamless proxy/Vercel support
+app.include_router(api_router)
+app.include_router(api_router, prefix="/api")
 
 
 if __name__ == "__main__":

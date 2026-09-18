@@ -10,7 +10,10 @@ import type {
   APIError,
 } from '@/types';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const RAW_API_URL = import.meta.env.VITE_API_URL;
+const API_URL = (RAW_API_URL !== undefined && RAW_API_URL !== '')
+  ? RAW_API_URL.replace(/\/$/, '')
+  : (import.meta.env.DEV ? 'http://localhost:8000' : '');
 
 interface RequestConfig {
   headers?: Record<string, string>;

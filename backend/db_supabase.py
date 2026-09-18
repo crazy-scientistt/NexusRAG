@@ -44,7 +44,9 @@ def _get_db_type_and_connection():
         return "postgres", _get_postgres_connection(db_url)
     else:
         # SQLite (default for local dev)
-        db_path = os.getenv("DB_PATH", "./data/rag.db")
+        is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+        default_db = "/tmp/rag.db" if is_serverless else "./data/rag.db"
+        db_path = os.getenv("DB_PATH", default_db)
         return "sqlite", _get_sqlite_connection(db_path)
 
 
