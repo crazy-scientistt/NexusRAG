@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Session } from '@/types';
 import { apiClient } from '@/services/api';
 
@@ -7,6 +7,8 @@ export function useSession(isAuthenticated: boolean) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Guards against a second bootstrap session when the load effect re-runs.
+  const bootstrappedRef = useRef(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -20,8 +22,18 @@ export function useSession(isAuthenticated: boolean) {
       try {
         const data = await apiClient.listSessions();
         setSessions(data);
-        if (!activeSessionId && data.length > 0) {
-          setActiveSessionId(data[0].id);
+        if (data.length > 0) {
+          if (!activeSessionId) {
+            setActiveSessionId(data[0].id);
+          }
+        } else if (!bootstrappedRef.current) {
+          // A first-time visitor has no sessions. Without one, every send failed
+          // with "No active session": the composer cleared and nothing appeared.
+          // Open one up front so the workspace is usable immediately.
+          bootstrappedRef.current = true;
+          const first = await apiClient.createSession({ name: 'New Session' });
+          setSessions([first]);
+          setActiveSessionId(first.id);
         }
         setError(null);
       } catch (err) {

@@ -186,6 +186,13 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
       });
     } catch (e) {
       console.error('Send message error:', e);
+      // The composer is cleared before sending, so hand the text back rather
+      // than losing it, and say why nothing happened.
+      setInputValue(trimmed);
+      const detail =
+        (e as { detail?: string })?.detail ||
+        (e instanceof Error ? e.message : 'Please try again.');
+      toast.error('Could not send your message', { description: detail });
     }
   };
 
