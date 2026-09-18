@@ -24,7 +24,22 @@ except ImportError:
     pass
 
 from typing import List, Dict, Any, Optional
-import numpy as np
+import math
+
+
+def _l2_norm(vec) -> float:
+    """Euclidean norm, pure-python (keeps numpy out of the serverless bundle)."""
+    return math.sqrt(sum(float(x) * float(x) for x in vec))
+
+
+def _cosine_similarity(a, b) -> float:
+    """Cosine similarity between two equal-length vectors."""
+    norm_a = _l2_norm(a)
+    norm_b = _l2_norm(b)
+    if norm_a <= 0 or norm_b <= 0:
+        return 0.0
+    dot = sum(float(x) * float(y) for x, y in zip(a, b))
+    return dot / (norm_a * norm_b)
 
 try:
     import chromadb
@@ -160,10 +175,7 @@ class VectorStore:
         if self.is_fallback or not self.collection:
             if not self._memory_docs:
                 return []
-            q_emb = np.array(query_embedding, dtype=float)
-            norm_q = np.linalg.norm(q_emb)
-            if norm_q > 0:
-                q_emb = q_emb / norm_q
+            q_emb = [float(x) for x in query_embedding]
             scored = []
             for item in self._memory_docs:
                 meta = item["metadata"]
@@ -180,9 +192,7 @@ class VectorStore:
                             break
                     if not match:
                         continue
-                d_emb = np.array(item["embedding"], dtype=float)
-                norm_d = np.linalg.norm(d_emb)
-                sim = float(np.dot(q_emb, d_emb) / (norm_d + 1e-9)) if norm_d > 0 else 0.0
+                sim = _cosine_similarity(q_emb, item["embedding"])
                 scored.append((max(0.0, 1.0 - sim), item))
             scored.sort(key=lambda x: x[0])
             return [

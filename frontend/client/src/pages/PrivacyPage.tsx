@@ -82,7 +82,7 @@ export function PrivacyPage({ onBack }: PrivacyPageProps) {
             <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
               <li><strong className="text-foreground">Uploaded Documents:</strong> PDF, DOCX, TXT, and Markdown files uploaded by you. These are split into localized chunk tokens and processed through our local dense embedding model.</li>
               <li><strong className="text-foreground">Session Metadata:</strong> Session timestamps, synthesis mode selections (Executive, Academic, Extraction), and query logs required to present dialogue history.</li>
-              <li><strong className="text-foreground">Authentication Credentials:</strong> In Developer/Guest Mode, session tokens are stored purely in your browser&rsquo;s local storage. In Firebase mode, tokens are verified against standard Firebase Auth public keys.</li>
+              <li><strong className="text-foreground">Authentication Credentials:</strong> NexusRAG has no accounts and no sign-in. We never ask for a password, and no login credentials are collected or stored.</li>
             </ul>
           </section>
 

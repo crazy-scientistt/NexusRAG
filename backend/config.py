@@ -80,10 +80,8 @@ class Config:
     # Payments
     PAYMENT_ENABLED: bool = os.getenv("PAYMENT_ENABLED", "false").lower() == "true"
     
-    # Auth & Developer Mode
+    # Access mode. NexusRAG has no login: every caller is the Studio Guest.
     DEV_MODE: bool = os.getenv("DEV_MODE", "true").lower() == "true"
-    FIREBASE_CREDENTIALS: str = os.getenv("FIREBASE_CREDENTIALS", "")
-    FIREBASE_CREDENTIALS_JSON: str = os.getenv("FIREBASE_CREDENTIALS_JSON", "")
 
 def get_config() -> Config:
     """Get system configuration."""

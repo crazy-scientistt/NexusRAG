@@ -1,12 +1,20 @@
+# Runtime dependencies for the Vercel serverless function ONLY.
+#
+# Vercel bundles every installed package into the function, and the bundle has a
+# hard size limit. Keep this list minimal -- anything needed only for local dev
+# or scripts belongs in backend/requirements.txt instead.
+#
+# Deliberately NOT here:
+#   firebase-admin  -> NexusRAG has no login; it also drags in grpcio/protobuf/
+#                      google-cloud/cryptography (~80 MB unpacked).
+#   numpy           -> vector_store.py does its own cosine similarity (~60 MB).
+#   langchain-*     -> backend/text_splitter.py replaces it (~20 MB).
+#   uvicorn         -> Vercel serves the ASGI app directly; no server needed.
 fastapi>=0.104.1
-uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 requests>=2.31.0
-langchain-text-splitters>=0.0.1
 pypdf>=3.17.0
 python-docx>=1.1.0
 beautifulsoup4>=4.12.0
-numpy>=1.24.0
 python-dotenv>=1.0.0
-firebase-admin>=6.5.0
 psycopg2-binary>=2.9.9

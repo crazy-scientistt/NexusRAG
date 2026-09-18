@@ -1,20 +1,65 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm --prefix frontend install --legacy-peer-deps && npm --prefix frontend run build",
+  "buildCommand": "npm --prefix frontend install --legacy-peer-deps && npm --prefix frontend run build && rm -rf frontend/node_modules",
   "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/**/*.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{frontend/**,node_modules/**,**/node_modules/**,.git/**,data/**,**/data/**,uploads/**,**/.env,**/__pycache__/**,**/*.pyc,**/test_*.py,**/*_test.py,backend/migrate_to_postgres.py,backend/verify_migration.py,**/*.md,**/*.lock,**/*.log}"
+    }
+  },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.py" },
-    { "source": "/api", "destination": "/api/index.py" },
-    { "source": "/health", "destination": "/api/index.py" },
-    { "source": "/me", "destination": "/api/index.py" },
-    { "source": "/stats", "destination": "/api/index.py" },
-    { "source": "/models", "destination": "/api/index.py" },
-    { "source": "/sessions", "destination": "/api/index.py" },
-    { "source": "/sessions/(.*)", "destination": "/api/index.py" },
-    { "source": "/upload", "destination": "/api/index.py" },
-    { "source": "/documents", "destination": "/api/index.py" },
-    { "source": "/documents/(.*)", "destination": "/api/index.py" },
-    { "source": "/clear", "destination": "/api/index.py" },
-    { "source": "/((?!api/|api$|health|me|stats|models|sessions|upload|documents|clear).*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/api",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/me",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/stats",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/models",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/sessions",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/sessions/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/upload",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/documents",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/documents/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/clear",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/((?!api/|api$|health|me|stats|models|sessions|upload|documents|clear).*)",
+      "destination": "/index.html"
+    }
   ]
 }

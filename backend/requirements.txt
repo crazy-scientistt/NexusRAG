@@ -1,24 +1,25 @@
-# Web Framework (Original)
+# Local / self-hosted development dependencies.
+# The Vercel serverless function uses the slimmer api/requirements.txt.
+
+# Web framework
 fastapi>=0.104.1
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 requests>=2.31.0
 
-# Vector Database & LangChain (Original)
-chromadb>=0.4.22
-langchain>=0.1.0
-langchain-text-splitters>=0.0.1
-
-# Document Processing (Original - Text-based only)
+# Document processing (text extraction only)
 pypdf>=3.17.0
 python-docx>=1.1.0
 beautifulsoup4>=4.12.0
 
-# Basic utilities (Original)
-numpy>=1.24.0
+# Utilities
 python-dotenv>=1.0.0
-firebase-admin>=6.5.0
 
-# PostgreSQL/Supabase Support (Python 3.12+ compatible)
-# Using psycopg2-binary - NO SQLAlchemy to avoid PyO3/tokenizers issues
-psycopg2-binary>=2.9.9pysqlite3-binary>=0.5.2; sys_platform == 'linux'
+# PostgreSQL / Supabase support (Python 3.12+ compatible)
+# psycopg2-binary, no SQLAlchemy, to avoid PyO3/tokenizers build issues
+psycopg2-binary>=2.9.9
+
+# Optional local vector store. Not installed on Vercel: chromadb is far too
+# large for the function bundle, and vector_store.py falls back to its
+# in-memory store when chromadb is absent.
+# chromadb>=0.4.22
