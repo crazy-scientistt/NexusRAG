@@ -1,32 +1,26 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python"
+  "services": {
+    "frontend": {
+      "root": "frontend/",
+      "framework": "vite"
     },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "frontend/dist"
-      }
+    "api": {
+      "root": "backend/",
+      "entrypoint": "app:app"
     }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "api/index.py" },
-    { "src": "/api", "dest": "api/index.py" },
-    { "src": "/health", "dest": "api/index.py" },
-    { "src": "/me", "dest": "api/index.py" },
-    { "src": "/stats", "dest": "api/index.py" },
-    { "src": "/models", "dest": "api/index.py" },
-    { "src": "/sessions", "dest": "api/index.py" },
-    { "src": "/sessions/(.*)", "dest": "api/index.py" },
-    { "src": "/upload", "dest": "api/index.py" },
-    { "src": "/documents", "dest": "api/index.py" },
-    { "src": "/documents/(.*)", "dest": "api/index.py" },
-    { "src": "/clear", "dest": "api/index.py" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": { "service": "api" } },
+    { "source": "/models", "destination": { "service": "api" } },
+    { "source": "/sessions/:path*", "destination": { "service": "api" } },
+    { "source": "/sessions", "destination": { "service": "api" } },
+    { "source": "/upload", "destination": { "service": "api" } },
+    { "source": "/documents/:path*", "destination": { "service": "api" } },
+    { "source": "/documents", "destination": { "service": "api" } },
+    { "source": "/clear", "destination": { "service": "api" } },
+    { "source": "/stats", "destination": { "service": "api" } },
+    { "source": "/me", "destination": { "service": "api" } },
+    { "source": "/health", "destination": { "service": "api" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
   ]
 }
