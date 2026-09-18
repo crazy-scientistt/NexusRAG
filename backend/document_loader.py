@@ -19,7 +19,22 @@ Note: Image files and OCR have been removed for better reliability
 """
 from typing import List, Dict, Any
 from pathlib import Path
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    class RecursiveCharacterTextSplitter:  # type: ignore
+        def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200, length_function=len):
+            self.chunk_size = chunk_size
+            self.chunk_overlap = chunk_overlap
+
+        def split_text(self, text: str) -> List[str]:
+            if not text:
+                return []
+            chunks = []
+            step = max(1, self.chunk_size - self.chunk_overlap)
+            for i in range(0, len(text), step):
+                chunks.append(text[i:i + self.chunk_size])
+            return chunks
 import logging
 
 logging.basicConfig(level=logging.INFO)

@@ -1,26 +1,20 @@
 {
-  "services": {
-    "frontend": {
-      "root": "frontend/",
-      "framework": "vite"
-    },
-    "api": {
-      "root": "backend/",
-      "entrypoint": "app:app"
-    }
-  },
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "frontend/dist",
   "rewrites": [
-    { "source": "/api/:path*", "destination": { "service": "api" } },
-    { "source": "/models", "destination": { "service": "api" } },
-    { "source": "/sessions/:path*", "destination": { "service": "api" } },
-    { "source": "/sessions", "destination": { "service": "api" } },
-    { "source": "/upload", "destination": { "service": "api" } },
-    { "source": "/documents/:path*", "destination": { "service": "api" } },
-    { "source": "/documents", "destination": { "service": "api" } },
-    { "source": "/clear", "destination": { "service": "api" } },
-    { "source": "/stats", "destination": { "service": "api" } },
-    { "source": "/me", "destination": { "service": "api" } },
-    { "source": "/health", "destination": { "service": "api" } },
-    { "source": "/(.*)", "destination": { "service": "frontend" } }
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
+    { "source": "/api", "destination": "/api/index.py" },
+    { "source": "/health", "destination": "/api/index.py" },
+    { "source": "/me", "destination": "/api/index.py" },
+    { "source": "/stats", "destination": "/api/index.py" },
+    { "source": "/models", "destination": "/api/index.py" },
+    { "source": "/sessions", "destination": "/api/index.py" },
+    { "source": "/sessions/(.*)", "destination": "/api/index.py" },
+    { "source": "/upload", "destination": "/api/index.py" },
+    { "source": "/documents", "destination": "/api/index.py" },
+    { "source": "/documents/(.*)", "destination": "/api/index.py" },
+    { "source": "/clear", "destination": "/api/index.py" },
+    { "source": "/((?!api/|api$|health|me|stats|models|sessions|upload|documents|clear).*)", "destination": "/index.html" }
   ]
 }
