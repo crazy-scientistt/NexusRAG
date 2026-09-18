@@ -26,6 +26,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { toast } from 'sonner';
+import { EvidencePanel } from '@/components/workspace/EvidencePanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSession } from '@/hooks/useSession';
@@ -95,7 +96,7 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
     }
   };
 
-  const { messages, isLoading: messagesLoading, isSending, sendMessage } = useMessages(
+  const { messages, isLoading: messagesLoading, isSending, streamingId, sendMessage } = useMessages(
     activeSessionId,
     handleFirstMessage
   );
@@ -571,7 +572,17 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {msg.content}
                         </ReactMarkdown>
+                        {msg.id === streamingId && (
+                          <span
+                            className="inline-block w-[2px] h-[1em] align-text-bottom bg-foreground animate-pulse ml-0.5"
+                            aria-label="still writing"
+                          />
+                        )}
                       </div>
+
+                      {!isUser && msg.id !== streamingId && (
+                        <EvidencePanel evidence={msg.metadata?.evidence} />
+                      )}
 
                       {/* Citations */}
                       {!isUser && (msg.sources || msg.metadata?.sources) && (msg.sources || msg.metadata?.sources)!.length > 0 && (

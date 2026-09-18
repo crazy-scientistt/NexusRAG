@@ -28,7 +28,40 @@ export interface ModelsResponse {
   has_openrouter_key: boolean;
 }
 
+export interface EvidenceSentence {
+  text: string;
+  verdict: 'supported' | 'partial' | 'unverified' | 'skipped';
+  score: number | null;
+  source_index: number | null;
+  source_name: string | null;
+  snippet: string | null;
+}
+
+export interface EvidenceReport {
+  sentences: EvidenceSentence[];
+  summary: {
+    supported: number;
+    partial: number;
+    unverified: number;
+    skipped: number;
+    grounded_ratio: number;
+  };
+}
+
+export type StreamEvent =
+  | {
+      type: 'retrieval';
+      sources: SourceCitation[];
+      retrieval_ms: number;
+      model_used: string;
+      supported_by_documents: boolean;
+    }
+  | { type: 'token'; text: string }
+  | ({ type: 'done' } & QueryResponse)
+  | { type: 'error'; detail: string };
+
 export interface MessageMetadata {
+  evidence?: EvidenceReport;
   sources?: SourceCitation[];
   confidence?: { score: number; label: string } | Record<string, any>;
   supported_by_documents?: boolean;
@@ -87,6 +120,7 @@ export interface QueryResponse {
   model_used?: string;
   retrieval_ms: number;
   generation_ms: number;
+  evidence?: EvidenceReport;
 }
 
 export interface UploadResponse {

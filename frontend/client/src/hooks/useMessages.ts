@@ -20,6 +20,7 @@ export function useMessages(sessionId: string | null, onFirstMessage?: (message:
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   // Use ref to avoid dependency issues with callback
@@ -63,47 +64,78 @@ export function useMessages(sessionId: string | null, onFirstMessage?: (message:
   const sendMessage = useCallback(async (payload: MessageRequest) => {
     if (!sessionId) throw new Error('No active session');
     setIsSending(true);
-    
-    // Capture current message count before sending
+
     const wasEmpty = messages.length === 0;
-    
+    const userMessage: Message = {
+      id: `user-${Date.now()}`,
+      session_id: sessionId,
+      role: 'user',
+      content: payload.question,
+      created_at: new Date().toISOString(),
+    };
+    const assistantId = `assistant-${Date.now()}`;
+    const assistantMessage: Message = {
+      id: assistantId,
+      session_id: sessionId,
+      role: 'assistant',
+      content: '',
+      metadata: {},
+      created_at: new Date().toISOString(),
+    };
+
+    // Show both turns immediately; the assistant one fills in as tokens arrive.
+    setMessages((prev) => [...prev, userMessage, assistantMessage]);
+    setStreamingId(assistantId);
+
+    const patchAssistant = (patch: Partial<Message>) =>
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m))
+      );
+
+    let accumulated = '';
+
     try {
-      const response = await apiClient.sendMessage(sessionId, payload);
-      const cleanedResponse = stripInternalMarkers(response.response);
+      await apiClient.streamMessage(sessionId, payload, (event) => {
+        if (event.type === 'token') {
+          accumulated += event.text;
+          patchAssistant({ content: stripInternalMarkers(accumulated) });
+        } else if (event.type === 'retrieval') {
+          patchAssistant({
+            metadata: {
+              sources: event.sources,
+              supported_by_documents: event.supported_by_documents,
+              model_used: event.model_used,
+            },
+          });
+        } else if (event.type === 'done') {
+          patchAssistant({
+            content: stripInternalMarkers(event.response),
+            metadata: {
+              supported_by_documents: event.supported_by_documents,
+              mode: event.mode,
+              sources: event.sources,
+              confidence: event.confidence,
+              model_used: event.model_used,
+              evidence: event.evidence,
+            },
+          });
+        } else if (event.type === 'error') {
+          throw { status: 500, detail: event.detail };
+        }
+      });
 
-      const userMessage: Message = {
-        id: `user-${Date.now()}`, session_id: sessionId, role: 'user',
-        content: payload.question, created_at: new Date().toISOString(),
-      };
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        session_id: sessionId,
-        role: 'assistant',
-        content: cleanedResponse,
-        metadata: {
-          supported_by_documents: response.supported_by_documents,
-          mode: response.mode,
-          sources: response.sources,
-          confidence: response.confidence,
-          model_used: response.model_used,
-        },
-        created_at: new Date().toISOString(),
-      };
-
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
       setError(null);
-      
-      // Trigger auto-naming callback if this was the first message
-      // Using ref to avoid circular dependency
       if (wasEmpty && onFirstMessageRef.current) {
         onFirstMessageRef.current(payload.question);
       }
-      
-      return response;
     } catch (err) {
+      // Drop the placeholder turns so a failed send does not leave an empty
+      // bubble behind; the caller restores the composer text.
+      setMessages((prev) => prev.filter((m) => m.id !== assistantId && m.id !== userMessage.id));
       setError(err instanceof Error ? err.message : 'Failed to send message');
       throw err;
     } finally {
+      setStreamingId(null);
       setIsSending(false);
     }
   }, [sessionId, messages.length]);
@@ -120,5 +152,5 @@ export function useMessages(sessionId: string | null, onFirstMessage?: (message:
 
   const clearMessages = useCallback(() => { setMessages([]); }, []);
 
-  return { messages, isLoading, isSending, error, sendMessage, pinMessage, clearMessages };
+  return { messages, isLoading, isSending, streamingId, error, sendMessage, pinMessage, clearMessages };
 }

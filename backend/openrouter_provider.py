@@ -242,8 +242,14 @@ class OpenRouterLLM:
                     yield self._stream_error(response, active_model)
                     return
 
-                for raw_line in response.iter_lines(decode_unicode=True):
-                    if not raw_line or not raw_line.startswith("data:"):
+                # Decode explicitly: requests falls back to latin-1 when the
+                # SSE response carries no charset, which turns every curly
+                # apostrophe into mojibake.
+                for raw_bytes in response.iter_lines():
+                    if not raw_bytes:
+                        continue
+                    raw_line = raw_bytes.decode("utf-8", "replace")
+                    if not raw_line.startswith("data:"):
                         continue
                     data = raw_line[5:].strip()
                     if data == "[DONE]":

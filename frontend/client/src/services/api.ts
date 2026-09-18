@@ -7,6 +7,7 @@ import type {
   SessionCreateRequest,
   MessageRequest,
   ModelsResponse,
+  StreamEvent,
   APIError,
 } from '@/types';
 
@@ -104,6 +105,65 @@ class APIClient {
 
   async sendMessage(sessionId: string, payload: MessageRequest) {
     return this.request<QueryResponse>(`/sessions/${sessionId}/messages`, { method: 'POST', body: payload });
+  }
+
+  /**
+   * Stream an answer as it is generated.
+   *
+   * EventSource cannot issue a POST, so this reads the server-sent event body
+   * straight off fetch. onEvent receives each decoded event in order:
+   * retrieval, then many token events, then done (or error).
+   */
+  async streamMessage(
+    sessionId: string,
+    payload: MessageRequest,
+    onEvent: (event: StreamEvent) => void,
+    signal?: AbortSignal
+  ): Promise<void> {
+    const url = `${API_URL}/sessions/${sessionId}/messages/stream`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.idToken) headers['Authorization'] = `Bearer ${this.idToken}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal,
+    });
+
+    if (!response.ok || !response.body) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw { status: response.status, detail: error.detail || 'Stream failed' } as APIError;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const FRAME_SEPARATOR = '\n\n';
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Frames are separated by a blank line. Keep any partial tail for the
+        // next chunk, since a frame can be split across network reads.
+        const frames = buffer.split(FRAME_SEPARATOR);
+        buffer = frames.pop() ?? '';
+        for (const frame of frames) {
+          const line = frame.split('\n').find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          try {
+            onEvent(JSON.parse(line.slice(5).trim()) as StreamEvent);
+          } catch {
+            // One malformed frame must not kill the whole stream.
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   async pinMessage(sessionId: string, messageId: string, pinned: boolean) {
