@@ -16,8 +16,16 @@
 Configuration for HuggingFace Inference Providers RAG System
 """
 import os
+from pathlib import Path
 from dataclasses import dataclass
 from typing import List
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+    load_dotenv(Path(__file__).parent.parent / ".env")
+except Exception:
+    pass
 
 @dataclass
 class Config:
@@ -54,8 +62,16 @@ class Config:
     MAX_FILE_MB: int = int(os.getenv("MAX_FILE_MB", "25"))
     TEMP_DOC_TTL_MIN: int = int(os.getenv("TEMP_DOC_TTL_MIN", "1440"))  # 24h
     
-    # Persistence
+    # Persistence & Supabase
     DB_PATH: str = os.getenv("DB_PATH", "/tmp/rag.db" if is_serverless else "./data/rag.db")
+    NEXT_PUBLIC_SUPABASE_URL: str = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL", "")
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: str = (
+        os.getenv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
+        or os.getenv("SUPABASE_ANON_KEY")
+        or os.getenv("SUPABASE_KEY", "")
+    )
+    SUPABASE_DB_URL: str = os.getenv("SUPABASE_DB_URL", "")
+    SUPABASE_PASSWORD: str = os.getenv("SUPABASE_PASSWORD", "")
     
     # RAG behavior
     DEFAULT_STRICT: bool = os.getenv("DEFAULT_STRICT", "false").lower() == "true"

@@ -32,22 +32,27 @@ from pathlib import Path
 
 def _get_db_type_and_connection():
     """Determine database type and return appropriate connection."""
-    # Check for Supabase URL first
-    supabase_url = os.getenv("SUPABASE_DB_URL")
-    db_url = os.getenv("DATABASE_URL")
-    
-    if supabase_url:
-        # Supabase PostgreSQL
-        return "postgres", _get_postgres_connection(supabase_url)
-    elif db_url and not db_url.startswith("sqlite"):
-        # Standard PostgreSQL
-        return "postgres", _get_postgres_connection(db_url)
-    else:
-        # SQLite (default for local dev)
-        is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
-        default_db = "/tmp/rag.db" if is_serverless else "./data/rag.db"
-        db_path = os.getenv("DB_PATH", default_db)
-        return "sqlite", _get_sqlite_connection(db_path)
+    # Check for direct connection strings first
+    supabase_db_url = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
+    supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL")
+    password = os.getenv("SUPABASE_PASSWORD") or os.getenv("DB_PASSWORD")
+
+    # If user provided NEXT_PUBLIC_SUPABASE_URL and password, construct direct host
+    if not supabase_db_url and supabase_url and password and "supabase.co" in supabase_url:
+        ref = supabase_url.replace("https://", "").replace("http://", "").split(".")[0]
+        supabase_db_url = f"postgresql://postgres:{password}@db.{ref}.supabase.co:5432/postgres"
+
+    if supabase_db_url and not supabase_db_url.startswith("sqlite"):
+        try:
+            return "postgres", _get_postgres_connection(supabase_db_url)
+        except Exception as pg_err:
+            print(f"[WARN] Failed to connect to PostgreSQL/Supabase ({pg_err}). Falling back to SQLite.")
+
+    # SQLite (default for local dev & serverless fallback)
+    is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+    default_db = "/tmp/rag.db" if is_serverless else "./data/rag.db"
+    db_path = os.getenv("DB_PATH", default_db)
+    return "sqlite", _get_sqlite_connection(db_path)
 
 
 def _get_postgres_connection(db_url: str):
