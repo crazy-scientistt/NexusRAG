@@ -177,10 +177,20 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
       textareaRef.current.style.height = 'auto';
     }
 
+    // Strict mode answers only from uploaded documents. With an empty vault that
+    // always refuses, which reads as a broken app on a first visit, so fall back
+    // to hybrid and say why rather than returning a dead end.
+    const groundingAvailable = documents.length > 0;
+    if (strictMode && !groundingAvailable) {
+      toast('Answering from general knowledge', {
+        description: 'This session has no documents yet. Upload one for grounded, cited answers.',
+      });
+    }
+
     try {
       await sendMessage({
         question: fullQuery,
-        mode: strictMode ? 'strict' : 'hybrid',
+        mode: strictMode && groundingAvailable ? 'strict' : 'hybrid',
         explain_simpler: false,
         model: selectedModelId,
       });
