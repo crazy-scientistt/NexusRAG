@@ -202,8 +202,16 @@ class CloudRAG:
         for pattern in patterns:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
 
-        cleaned = re.sub(r"^\s*Sources?:.*$", "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
-        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        cleaned = re.sub(r"^[ \t]*Sources?:.*$", "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
+
+        # Collapse leftover runs of whitespace, but only horizontal ones.
+        # This was \s{2,}, which also matches newlines, so every blank line in an
+        # answer became a single space: headings were glued onto the following
+        # paragraph, bullets ran together, and a markdown table lost the line
+        # breaks that make it a table. That is what made answers unreadable.
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"[ \t]+$", "", cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
         return cleaned.strip()
 
     def query(
