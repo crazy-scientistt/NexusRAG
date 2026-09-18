@@ -53,7 +53,13 @@ class APIClient {
 
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        return undefined as T;
+        // A 200 that isn't JSON means the call never reached the API: it was answered
+        // by the SPA fallback or an edge error page. Returning undefined here used to
+        // make that look like a successful-but-empty response, which hid real outages.
+        throw {
+          status: response.status,
+          detail: `Expected JSON from ${endpoint} but got "${contentType || 'no content-type'}". The API is not reachable.`,
+        } as APIError;
       }
       return response.json();
     } catch (error) {

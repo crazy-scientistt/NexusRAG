@@ -20,7 +20,7 @@ semantic confidence scoring, and hybrid/strict retrieval modes.
 import re
 import time
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Any, Dict, Optional, List
 
 from config import get_config
 from document_loader import DocumentLoader

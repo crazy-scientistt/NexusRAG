@@ -88,6 +88,11 @@ export function ModelSelectorDropdown({
             </div>
 
             <div className="max-h-64 overflow-y-auto space-y-1">
+              {models.length === 0 && (
+                <p className="px-2.5 py-3 text-[11px] text-muted-foreground">
+                  Model catalog unavailable &mdash; could not reach the API.
+                </p>
+              )}
               {models.map((model) => {
                 const isSelected = model.id === selectedModelId;
                 return (
