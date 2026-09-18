@@ -67,7 +67,7 @@ export function SecurityPage({ onBack, onGetStarted }: SecurityPageProps) {
             </div>
             <div className="p-4 rounded-md border border-border bg-secondary/30">
               <span className="block text-[11px] font-mono text-muted-foreground mb-1">04. SYNTHESIS</span>
-              <span className="text-xs font-semibold">OpenRouter Fleet</span>
+              <span className="text-xs font-semibold">Frontier Models</span>
               <span className="block text-[10px] text-muted-foreground mt-1">Grounded Citations</span>
             </div>
           </div>

@@ -23,10 +23,7 @@ export function Footer({ onNavigate }: FooterProps) {
             <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
               Autonomous document intelligence, grounded semantic vector search, and frontier multi-model synthesis designed with editorial precision.
             </p>
-            <div className="inline-flex items-center gap-2 text-[11px] font-mono text-muted-foreground pt-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-              <span>Vector Engine Operational &bull; D &lt; 0.75 Strict</span>
-            </div>
+
           </div>
 
           {/* Column 1: Platform */}
