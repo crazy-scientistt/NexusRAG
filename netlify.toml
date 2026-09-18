@@ -1,21 +1,14 @@
 # Netlify configuration for RAG V2 Frontend
 
 [build]
-  # Base directory - where your package.json is located
+  # Base directory - where package.json is located
   base = "frontend"
   
   # Build command
-  command = "pnpm install && pnpm run build"
+  command = "npm install --legacy-peer-deps && npm run build"
   
-  # Publish directory - where your built files are (matching vite.config.ts outDir)
+  # Publish directory matching vite.config.ts outDir
   publish = "dist/public"
-
-# Force HTTPS redirect - must come before SPA redirect
-[[redirects]]
-  from = "http://ragv2.netlify.app/*"
-  to = "https://ragv2.netlify.app/:splat"
-  status = 301
-  force = true
 
 # SPA routing - redirect all requests to index.html for client-side routing
 [[redirects]]

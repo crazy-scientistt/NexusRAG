@@ -98,7 +98,7 @@ def init_db():
         _init_sqlite(conn)
     
     conn.close()
-    print(f"✅ Database initialized ({db_type})")
+    print(f"[OK] Database initialized ({db_type})")
 
 
 def _init_sqlite(conn):
@@ -790,4 +790,4 @@ def cleanup_old_sessions(days: int = 30) -> Dict[str, List[Dict]]:
 try:
     init_db()
 except Exception as e:
-    print(f"⚠️  Database initialization warning: {e}")
+    print(f"[WARN] Database initialization warning: {e}")

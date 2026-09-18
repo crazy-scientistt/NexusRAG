@@ -18,6 +18,7 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  loginAsGuest: () => void;
   logout: () => Promise<void>;
   clearError: () => void;
 }
@@ -31,17 +32,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!window.firebase) {
-      setError('Firebase not loaded');
+    // Check local guest session first
+    const savedGuest = localStorage.getItem('nexus_guest_session');
+    if (savedGuest) {
+      try {
+        const parsed = JSON.parse(savedGuest);
+        const token = 'guest-token-' + (parsed.uid || 'dev');
+        setUser(parsed);
+        setIdToken(token);
+        apiClient.setIdToken(token);
+        setIsLoading(false);
+        return;
+      } catch (e) {
+        localStorage.removeItem('nexus_guest_session');
+      }
+    }
+
+    // Only initialize Firebase Auth if Firebase is loaded and an app was registered
+    if (!window.firebase || !window.firebase.apps || window.firebase.apps.length === 0) {
       setIsLoading(false);
       return;
     }
 
-    const auth = window.firebase.auth();
+    let auth: any = null;
+    try {
+      auth = window.firebase.auth();
+    } catch (err) {
+      console.warn('Firebase auth initialization bypassed:', err);
+      setIsLoading(false);
+      return;
+    }
 
     auth.getRedirectResult()
       .then((result: any) => {
-        if (result.user) {
+        if (result && result.user) {
           console.log('Redirect sign-in successful');
         }
       })
@@ -63,9 +87,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             displayName: firebaseUser.displayName,
           });
         } else {
-          setUser(null);
-          setIdToken(null);
-          apiClient.setIdToken(null);
+          // If no firebase user and no local guest session
+          if (!localStorage.getItem('nexus_guest_session')) {
+            setUser(null);
+            setIdToken(null);
+            apiClient.setIdToken(null);
+          }
         }
         setError(null);
       } catch (err) {
@@ -82,6 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
+      if (!window.firebase?.apps?.length) throw new Error('Firebase authentication is not configured. Please enter the Studio as Guest.');
       const auth = window.firebase.auth();
       await auth.signInWithEmailAndPassword(email, password);
     } catch (err: any) {
@@ -96,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
+      if (!window.firebase?.apps?.length) throw new Error('Firebase authentication is not configured. Please enter the Studio as Guest.');
       const auth = window.firebase.auth();
       const provider = new window.firebase.auth.GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
@@ -121,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
+      if (!window.firebase?.apps?.length) throw new Error('Firebase authentication is not configured. Please enter the Studio as Guest.');
       const auth = window.firebase.auth();
       await auth.createUserWithEmailAndPassword(email, password);
     } catch (err: any) {
@@ -135,6 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
+      if (!window.firebase?.apps?.length) throw new Error('Firebase authentication is not configured. Please enter the Studio as Guest.');
       const auth = window.firebase.auth();
       await auth.sendPasswordResetEmail(email);
     } catch (err: any) {
@@ -146,24 +177,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const loginAsGuest = useCallback(() => {
+    setIsLoading(true);
+    setError(null);
+    const guestUser: User = {
+      uid: 'guest-studio-user',
+      email: 'guest@nexusrag.studio',
+      displayName: 'Studio Guest',
+    };
+    const token = 'guest-token-' + Date.now();
+    localStorage.setItem('nexus_guest_session', JSON.stringify(guestUser));
+    setIdToken(token);
+    apiClient.setIdToken(token);
+    setUser(guestUser);
+    setIsLoading(false);
+  }, []);
+
   const logout = useCallback(async () => {
+    localStorage.removeItem('nexus_guest_session');
     try {
-      const auth = window.firebase.auth();
-      await auth.signOut();
-    } catch (err: any) {
-      const message = err?.message || 'Logout failed';
-      setError(message);
-      throw err;
+      if (window.firebase && window.firebase.apps && window.firebase.apps.length > 0) {
+        await window.firebase.auth().signOut();
+      }
+    } catch (err) {
+      console.warn('Firebase logout warning:', err);
+    } finally {
+      setUser(null);
+      setIdToken(null);
+      apiClient.setIdToken(null);
     }
   }, []);
 
-  const clearError = useCallback(() => setError(null), []);
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
 
   return (
-    <AuthContext.Provider value={{
-      user, idToken, isLoading, error, isAuthenticated: !!user,
-      login, loginWithGoogle, signup, resetPassword, logout, clearError,
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        idToken,
+        isLoading,
+        error,
+        isAuthenticated: !!user,
+        login,
+        loginWithGoogle,
+        signup,
+        resetPassword,
+        loginAsGuest,
+        logout,
+        clearError,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -171,6 +236,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
   return context;
 }

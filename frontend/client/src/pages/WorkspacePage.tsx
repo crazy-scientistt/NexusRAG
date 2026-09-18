@@ -1,695 +1,592 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ArrowLeft,
+  Send,
+  Plus,
+  Trash2,
+  Copy,
+  Check,
+  FileText,
+  Search,
+  ChevronRight,
+  Download,
+  Paperclip,
+  Sun,
+  Moon,
+  Monitor,
+  Sparkles,
+  BarChart3,
+  Layers,
+  FileSpreadsheet,
+  FileCheck,
+  BookOpen,
+} from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useSession } from '@/hooks/useSession';
 import { useMessages } from '@/hooks/useMessages';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useIsMobile } from '@/hooks/useMobile';
 import { apiClient } from '@/services/api';
-import { formatDate, formatFileSize, truncate } from '@/lib/utils';
-import type { MessageRequest, Message } from '@/types';
-import ReactMarkdown from 'react-markdown';
+import type { ModelInfo, MessageRequest, SourceCitation } from '@/types';
+import { ModelSelectorDropdown } from '@/components/shared/ModelSelectorDropdown';
+import { CitationDrawer } from '@/components/workspace/CitationDrawer';
+import { DocumentVaultModal } from '@/components/workspace/DocumentVaultModal';
 
 interface WorkspacePageProps {
   onBack: () => void;
 }
 
+type SynthesisObjective = 'brief' | 'academic' | 'extraction' | 'chat';
+
+const OBJECTIVE_CONFIG: Record<SynthesisObjective, { label: string; icon: any; prefix: string; desc: string }> = {
+  brief: {
+    label: 'Executive Brief',
+    icon: Sparkles,
+    prefix: '[OBJECTIVE: Executive Decision Memo. Format with Executive Summary, 3-5 Critical Findings, and Risk/Action Items]\n\n',
+    desc: 'High-level synthesis formatted for decision makers with risks and takeaways.',
+  },
+  academic: {
+    label: 'Deep Analysis',
+    icon: BookOpen,
+    prefix: '[OBJECTIVE: Exhaustive Analytical Synthesis. Synthesize cross-document evidence, highlight nuances and citations]\n\n',
+    desc: 'In-depth rigorous investigation with extensive document cross-referencing.',
+  },
+  extraction: {
+    label: 'KPI & Tables',
+    icon: FileSpreadsheet,
+    prefix: '[OBJECTIVE: Data & KPI Extraction. Extract all dates, metrics, percentages, and deliverables into markdown tables]\n\n',
+    desc: 'Structured extraction of numerical metrics, deadlines, and deliverables into tables.',
+  },
+  chat: {
+    label: 'Standard Dialogue',
+    icon: FileText,
+    prefix: '',
+    desc: 'Direct conversational Q&A grounded in uploaded context.',
+  },
+};
+
 export function WorkspacePage({ onBack }: WorkspacePageProps) {
   const { user, logout, isAuthenticated } = useAuth();
-  const { sessions, activeSessionId, createSession, renameSession, deleteSession, selectSession,  autoNameSession  } = useSession(isAuthenticated);
-  // Simple callback for auto-naming - no useCallback needed to avoid circular deps
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const {
+    sessions,
+    activeSessionId,
+    createSession,
+    renameSession,
+    deleteSession,
+    selectSession,
+    autoNameSession,
+  } = useSession(isAuthenticated);
+
   const handleFirstMessage = (message: string) => {
     if (activeSessionId) {
       autoNameSession(activeSessionId, message);
     }
   };
-  const { messages, isLoading: messagesLoading, isSending, sendMessage, clearMessages } = useMessages(activeSessionId,handleFirstMessage);
-  const { documents, uploads, uploadDocument, deleteDocument, clearDocuments } = useDocuments(activeSessionId);
+
+  const { messages, isLoading: messagesLoading, isSending, sendMessage } = useMessages(
+    activeSessionId,
+    handleFirstMessage
+  );
+  const { documents, uploadDocument, deleteDocument } = useDocuments(activeSessionId);
   const isMobile = useIsMobile();
 
+  // Model selection state
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>('google/gemini-2.0-flash-001');
+
+  // UI States
   const [inputValue, setInputValue] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [docPanelOpen, setDocPanelOpen] = useState(false);
-  const [mode, setMode] = useState<'strict' | 'hybrid'>('hybrid');
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  const [docVaultOpen, setDocVaultOpen] = useState(false);
+  const [selectedCitation, setSelectedCitation] = useState<SourceCitation | null>(null);
+  const [synthesisObjective, setSynthesisObjective] = useState<SynthesisObjective>('brief');
+  const [strictMode, setStrictMode] = useState<boolean>(true);
+  const [sessionSearch, setSessionSearch] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isClearing, setIsClearing] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-close sidebar and doc panel on mobile
+  // Fetch models catalog on mount
   useEffect(() => {
-    if (isMobile) {
-      setSidebarOpen(false);
-      setDocPanelOpen(false);
-    } else {
-      setSidebarOpen(true);
+    async function loadModels() {
+      try {
+        const data = await apiClient.getModels();
+        if (data && data.models && data.models.length > 0) {
+          setModels(data.models);
+          if (data.active_model) {
+            setSelectedModelId(data.active_model);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load models catalog:', err);
+      }
     }
-  }, [isMobile]);
+    loadModels();
+  }, []);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll on message changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isSending]);
 
-  // Auto-focus input
-  useEffect(() => {
-    if (activeSessionId && !isSending) {
-      inputRef.current?.focus();
-    }
-  }, [activeSessionId, isSending]);
-
-  // Reset file input when session changes
-  useEffect(() => {
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  }, [activeSessionId]);
-
-  const handleSend = async () => {
-    if (!inputValue.trim() || !activeSessionId || isSending) return;
-    const question = inputValue;
-    setInputValue('');
-    try {
-      await sendMessage({ question, mode, explain_simpler: false } as MessageRequest);
-    } catch (err) {
-      console.error('Failed to send message:', err);
+  const handleTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputValue(e.target.value);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleSend = async () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed || isSending) return;
+
+    const prefix = OBJECTIVE_CONFIG[synthesisObjective].prefix;
+    const fullQuery = prefix ? `${prefix}${trimmed}` : trimmed;
+
+    setInputValue('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
+    try {
+      await sendMessage({
+        question: fullQuery,
+        mode: strictMode ? 'strict' : 'hybrid',
+        model: selectedModelId,
+      });
+    } catch (e) {
+      console.error('Send message error:', e);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
 
-  const handleFileUpload = useCallback(async (files: FileList | null) => {
-    if (!files || !activeSessionId) return;
-    for (const file of Array.from(files)) {
-      try {
-        await uploadDocument(file, false);
-      } catch (err) {
-        console.error('Upload failed:', err);
-      }
-    }
-  }, [activeSessionId, uploadDocument]);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    handleFileUpload(e.dataTransfer.files);
-  }, [handleFileUpload]);
-
-  const handleExport = async () => {
-    if (!activeSessionId) return;
-    try {
-      const markdown = await apiClient.exportSession(activeSessionId);
-      const blob = new Blob([markdown], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `chat-export-${new Date().toISOString().split('T')[0]}.md`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Export failed:', err);
-    }
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleClearAll = async () => {
-  if (window.confirm('Are you sure you want to clear all data? This cannot be undone.')) {
+  const handleExportMarkdown = (content: string, filename = 'nexus_synthesis.md') => {
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleClearAllData = async () => {
+    if (!window.confirm('Wipe all uploaded documents and vectors for this session? This action cannot be undone.')) {
+      return;
+    }
+    setIsClearing(true);
     try {
       await apiClient.clearUserData();
-      // Don't call clearMessages() or clearDocuments() - just reload
       window.location.reload();
-
-      window.location.reload();
-    } catch (err) {
-      console.error('Clear failed:', err);
-    }
-  }
-};
-
-  const startRename = (sessionId: string, currentName: string) => {
-    setEditingSessionId(sessionId);
-    setEditName(currentName);
-  };
-
-  const confirmRename = async () => {
-    if (editingSessionId && editName.trim()) {
-      await renameSession(editingSessionId, editName.trim());
-      setEditingSessionId(null);
+    } catch (e) {
+      alert('Failed to clear user data: ' + e);
+    } finally {
+      setIsClearing(false);
     }
   };
 
-  const handleSessionSelect = useCallback((sessionId: string) => {
-    selectSession(sessionId);
-    if (isMobile) {
-      setSidebarOpen(false);
+  const handlePresetClick = (presetQuery: string) => {
+    setInputValue(presetQuery);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
     }
-  }, [selectSession, isMobile]);
+  };
 
   return (
-    <div className="h-screen flex overflow-hidden bg-[#030014] relative" style={{ height: isMobile ? '100dvh' : '100vh' }}>
-      {/* Sidebar - OVERLAPS on mobile */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.aside
-            initial={{ x: -280, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -280, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className={`h-full border-r border-white/5 bg-[#050118]/80 backdrop-blur-xl flex flex-col overflow-hidden ${
-              isMobile ? 'fixed inset-y-0 left-0 z-50 w-[280px]' : 'flex-shrink-0 w-[280px]'
-            }`}
+    <div className="h-screen flex flex-col bg-background text-foreground transition-colors duration-200 overflow-hidden font-sans">
+      {/* Top Workspace Header */}
+      <header className="h-16 border-b border-border bg-background/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between z-20 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            title="Back to Overview"
           >
-            {/* Sidebar Header */}
-            <div className="p-4 border-b border-white/5">
-              <div className="flex items-center justify-between mb-4">
-                <button onClick={onBack} className="flex items-center gap-2 group">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-blue-500 flex items-center justify-center">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
-                      <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-                    </svg>
-                  </div>
-                  <span className="text-sm font-bold text-white">NexusRAG</span>
-                </button>
-                <button onClick={() => setSidebarOpen(false)} className="p-1.5 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" />
-                  </svg>
-                </button>
-              </div>
-              <motion.button
-                onClick={() => createSession('New Chat')}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/20 text-violet-300 text-sm font-medium transition-all duration-300"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M12 5v14" /><path d="M5 12h14" />
-                </svg>
-                New Chat
-              </motion.button>
-            </div>
+            <ArrowLeft className="w-4 h-4" />
+          </button>
 
-            {/* Sessions List */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-              {sessions.map((session) => (
-                <motion.div
-                  key={session.id}
-                  layout
-                  className={`group flex items-center gap-2 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 ${
-                    activeSessionId === session.id
-                      ? 'bg-violet-500/10 border border-violet-500/20'
-                      : 'hover:bg-white/[0.03] border border-transparent'
-                  }`}
-                  onClick={() => handleSessionSelect(session.id)}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={activeSessionId === session.id ? 'text-violet-400' : 'text-slate-500'}>
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                  </svg>
-
-                  {editingSessionId === session.id ? (
-                    <input
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onBlur={confirmRename}
-                      onKeyDown={(e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') setEditingSessionId(null); }}
-                      className="flex-1 bg-transparent text-sm text-white outline-none border-b border-violet-500/50"
-                      autoFocus
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  ) : (
-                    <span className={`flex-1 text-sm truncate ${activeSessionId === session.id ? 'text-white' : 'text-slate-400'}`}>
-                      {session.name}
-                    </span>
-                  )}
-
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); startRename(session.id, session.name); }}
-                      className="p-1 rounded hover:bg-white/10 text-slate-500 hover:text-white transition-colors"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete this session?')) deleteSession(session.id); }}
-                      className="p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                        <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                      </svg>
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-
-              {sessions.length === 0 && (
-                <div className="text-center py-8 text-slate-500 text-sm">
-                  No sessions yet. Create one to start.
-                </div>
-              )}
-            </div>
-
-            {/* User Section */}
-            <div className="p-3 border-t border-white/5">
-              <div className="relative">
-                <button
-                  onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 transition-colors"
-                >
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-                    {(user?.displayName || user?.email || '?')[0].toUpperCase()}
-                  </div>
-                  <div className="flex-1 text-left min-w-0">
-                    <div className="text-sm font-medium text-white truncate">{user?.displayName || 'User'}</div>
-                    <div className="text-xs text-slate-500 truncate">{user?.email}</div>
-                  </div>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-slate-500 flex-shrink-0">
-                    <path d="m18 15-6-6-6 6" />
-                  </svg>
-                </button>
-
-                <AnimatePresence>
-                  {userMenuOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      transition={{ duration: 0.2 }}
-                      className="absolute bottom-full left-0 right-0 mb-2 glass rounded-xl p-1.5 shadow-xl"
-                    >
-                      <button onClick={handleExport} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                        Export Chat
-                      </button>
-                      <button onClick={handleClearAll} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /></svg>
-                        Clear All Data
-                      </button>
-                      <div className="my-1 border-t border-white/5" />
-                      <button onClick={() => { logout(); setUserMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/5 hover:text-white transition-colors">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
-                        Sign Out
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-          </motion.aside>
-        )}
-      </AnimatePresence>
-
-      {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
-        {isMobile && sidebarOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 h-full">
-        {/* Top Bar */}
-        <div className="flex-shrink-0 h-14 border-b border-white/5 flex items-center justify-between px-3 md:px-4 bg-[#030014]/60 backdrop-blur-sm">
-          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
-            {!sidebarOpen && (
-              <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors flex-shrink-0">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" />
-                </svg>
-              </button>
-            )}
-            <h2 className="text-sm font-medium text-white truncate">
-              {sessions.find(s => s.id === activeSessionId)?.name || 'Select a session'}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
-            {/* Mode Toggle */}
-            <div className="flex items-center gap-1 p-1 rounded-lg bg-white/5">
-              <button
-                onClick={() => setMode('strict')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all duration-200 ${mode === 'strict' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
-              >
-                Strict
-              </button>
-              <button
-                onClick={() => setMode('hybrid')}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all duration-200 ${mode === 'hybrid' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
-              >
-                Hybrid
-              </button>
-            </div>
-
-            {/* Document Panel Toggle */}
-            <button
-              onClick={() => setDocPanelOpen(!docPanelOpen)}
-              className={`p-2 rounded-lg transition-colors relative ${docPanelOpen ? 'bg-violet-500/20 text-violet-400' : 'hover:bg-white/5 text-slate-400 hover:text-white'}`}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-              {documents.length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-violet-500 text-[10px] font-bold text-white flex items-center justify-center">
-                  {documents.length}
-                </span>
-              )}
-            </button>
+          <div className="flex items-center gap-2">
+            <span className="font-display font-bold text-sm tracking-tight hidden sm:inline">
+              NexusRAG
+            </span>
+            <span className="text-muted-foreground hidden sm:inline">&bull;</span>
+            <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
+              Studio Canvas
+            </span>
           </div>
         </div>
 
-        {/* Chat + Document Panel */}
-        <div className="flex-1 flex overflow-hidden min-h-0 relative">
-          {/* Chat Area */}
-          <div
-            className="flex-1 flex flex-col min-w-0"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={handleDrop}
+        {/* Center: Model Selector */}
+        <div className="flex items-center gap-2">
+          <ModelSelectorDropdown
+            models={models}
+            selectedModelId={selectedModelId}
+            onSelectModel={setSelectedModelId}
+            compact
+          />
+
+          <button
+            onClick={() => setStrictMode(!strictMode)}
+            title={strictMode ? 'Strict Distance Gating (< 0.75 cutoff)' : 'Hybrid Search'}
+            className={`px-2.5 py-1 rounded-md text-xs font-mono uppercase tracking-wider border transition-colors hidden sm:flex items-center gap-1.5 ${
+              strictMode
+                ? 'bg-foreground text-background border-foreground font-semibold'
+                : 'bg-card text-muted-foreground border-border hover:text-foreground'
+            }`}
           >
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 py-6">
-              {!activeSessionId ? (
-                <div className="h-full flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-4">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-violet-400">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-semibold text-white mb-2">No Session Selected</h3>
-                    <p className="text-sm text-slate-400 mb-4">Create a new chat to start asking questions</p>
-                    <div className="flex items-center gap-2 justify-center">
-                      <button onClick={() => createSession('New Chat')} className="btn-primary text-sm py-2 px-5">
-                        Create New Chat
-                      </button>
-                      {isMobile && !sidebarOpen && (
-                        <button onClick={() => setSidebarOpen(true)} className="btn-secondary text-sm py-2 px-4">
-                          Open Menu
-                        </button>
+            <span>{strictMode ? 'Strict Gate' : 'Hybrid Gate'}</span>
+          </button>
+        </div>
+
+        {/* Right Actions: Vault, Theme Toggle, Clear */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setDocVaultOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-secondary/80 hover:bg-secondary text-foreground text-xs font-mono tracking-wider transition-colors"
+          >
+            <Paperclip className="w-3.5 h-3.5" />
+            <span>Vault ({documents.length})</span>
+          </button>
+
+          {/* Theme Selector Button */}
+          <div className="flex items-center p-0.5 rounded-full border border-border bg-secondary/60">
+            <button
+              onClick={() => setThemeMode('light')}
+              title="Light"
+              className={`p-1 rounded-full ${themeMode === 'light' ? 'bg-foreground text-background' : 'text-muted-foreground'}`}
+            >
+              <Sun className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => setThemeMode('system')}
+              title="System"
+              className={`p-1 rounded-full ${themeMode === 'system' ? 'bg-foreground text-background' : 'text-muted-foreground'}`}
+            >
+              <Monitor className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => setThemeMode('dark')}
+              title="Dark"
+              className={`p-1 rounded-full ${themeMode === 'dark' ? 'bg-foreground text-background' : 'text-muted-foreground'}`}
+            >
+              <Moon className="w-3 h-3" />
+            </button>
+          </div>
+
+          <button
+            onClick={handleClearAllData}
+            disabled={isClearing}
+            title="Clear all documents & vectors"
+            className="p-1.5 rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </header>
+
+      {/* Main Workspace Body */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Sessions Sidebar */}
+        <aside
+          className={`${
+            sidebarOpen ? 'w-64' : 'w-0'
+          } border-r border-border bg-card/40 flex flex-col transition-all duration-200 overflow-hidden flex-shrink-0`}
+        >
+          <div className="p-3 border-b border-border flex items-center justify-between">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              Dossiers & Sessions
+            </span>
+            <button
+              onClick={() => createSession()}
+              className="p-1 rounded hover:bg-secondary text-foreground"
+              title="New Session"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {sessions.map((sess) => (
+              <button
+                key={sess.id}
+                onClick={() => selectSession(sess.id)}
+                className={`w-full text-left p-2 rounded-md text-xs truncate transition-colors flex items-center justify-between group ${
+                  sess.id === activeSessionId
+                    ? 'bg-secondary font-semibold text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                }`}
+              >
+                <span className="truncate">{sess.name || 'Untitled Session'}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSession(sess.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:text-destructive transition-opacity"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        {/* Center Chat & Synthesis Stream */}
+        <main className="flex-1 flex flex-col bg-background overflow-hidden relative">
+          {/* Synthesis Objective Bar */}
+          <div className="border-b border-border bg-secondary/30 px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto text-xs">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground flex-shrink-0">
+              Cognitive Objective:
+            </span>
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              {(Object.keys(OBJECTIVE_CONFIG) as SynthesisObjective[]).map((key) => {
+                const cfg = OBJECTIVE_CONFIG[key];
+                const Icon = cfg.icon;
+                const isSel = synthesisObjective === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setSynthesisObjective(key)}
+                    title={cfg.desc}
+                    className={`px-2.5 py-1 rounded text-xs flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                      isSel
+                        ? 'bg-foreground text-background font-semibold'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                    }`}
+                  >
+                    <Icon className="w-3 h-3" />
+                    <span>{cfg.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Messages Scroll Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center max-w-xl mx-auto space-y-6 py-12">
+                <div className="w-12 h-12 rounded-lg bg-foreground text-background flex items-center justify-center font-mono font-bold text-lg">
+                  N
+                </div>
+
+                <div className="space-y-2">
+                  <h2 className="font-display text-2xl font-bold tracking-tight">
+                    Document Intelligence Canvas
+                  </h2>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Upload documents to your session vault, select an OpenRouter model, and query with verified cosine distance grounding.
+                  </p>
+                </div>
+
+                {/* Instant Catalysts */}
+                <div className="w-full space-y-2 text-left pt-4">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground block">
+                    Instant Synthesis Catalysts:
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handlePresetClick('Draft an executive briefing summarizing top decisions, core findings, and next actions.')}
+                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs"
+                    >
+                      <span className="font-semibold block mb-0.5">Executive One-Pager</span>
+                      <span className="text-[11px] text-muted-foreground">Summarize decisions & top findings</span>
+                    </button>
+                    <button
+                      onClick={() => handlePresetClick('Extract all financial figures, dates, percentages, and KPIs into a structured markdown table.')}
+                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs"
+                    >
+                      <span className="font-semibold block mb-0.5">KPI & Table Extraction</span>
+                      <span className="text-[11px] text-muted-foreground">Isolate numbers, dates & milestones</span>
+                    </button>
+                    <button
+                      onClick={() => handlePresetClick('Audit the documents for risks, compliance liabilities, and non-standard covenants.')}
+                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs"
+                    >
+                      <span className="font-semibold block mb-0.5">Risk & Liability Audit</span>
+                      <span className="text-[11px] text-muted-foreground">Examine legal & operational risks</span>
+                    </button>
+                    <button
+                      onClick={() => handlePresetClick('Identify any contradictory statements or ambiguous clauses across the ingested files.')}
+                      className="p-3 rounded-md border border-border bg-card hover:border-foreground/40 text-left transition-colors text-xs"
+                    >
+                      <span className="font-semibold block mb-0.5">Contradiction Detection</span>
+                      <span className="text-[11px] text-muted-foreground">Flag factual divergence in text</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              messages.map((msg) => {
+                const isUser = msg.role === 'user';
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-3xl rounded-lg p-4 sm:p-5 space-y-3 ${
+                        isUser
+                          ? 'bg-foreground text-background ml-12'
+                          : 'bg-card border border-border text-foreground mr-12'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[10px] font-mono opacity-60 border-b border-current/10 pb-2">
+                        <span>{isUser ? 'Inquiry' : `Synthesis (${msg.model_used || selectedModelId.split('/').pop()})`}</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleCopy(msg.id, msg.content)}
+                            title="Copy text"
+                            className="hover:opacity-100 flex items-center gap-1"
+                          >
+                            {copiedId === msg.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedId === msg.id ? 'Copied' : 'Copy'}</span>
+                          </button>
+                          {!isUser && (
+                            <button
+                              onClick={() => handleExportMarkdown(msg.content)}
+                              title="Download Markdown"
+                              className="hover:opacity-100 flex items-center gap-1"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span>MD</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className={isUser ? 'text-sm font-medium leading-relaxed' : 'markdown-content'}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
+
+                      {/* Citations list if present */}
+                      {!isUser && msg.sources && msg.sources.length > 0 && (
+                        <div className="pt-3 border-t border-border space-y-1.5">
+                          <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground block">
+                            Grounding Citations ({msg.sources.length}):
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {msg.sources.map((src, i) => (
+                              <button
+                                key={i}
+                                onClick={() => setSelectedCitation(src)}
+                                className="px-2 py-1 rounded bg-secondary text-[11px] font-mono border border-border text-foreground hover:border-foreground/50 transition-colors flex items-center gap-1.5 truncate max-w-xs"
+                              >
+                                <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                                <span className="truncate">{src.document_name}</span>
+                                {src.distance !== undefined && (
+                                  <span className="text-muted-foreground text-[9px]">
+                                    (D: {src.distance.toFixed(2)})
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
-                </div>
-              ) : messages.length === 0 && !messagesLoading ? (
-                <div className="h-full flex items-center justify-center">
-                  <div className="text-center max-w-md">
-                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-600/20 to-blue-600/20 border border-violet-500/20 flex items-center justify-center mx-auto mb-6">
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-violet-400">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-semibold text-white mb-2">Welcome to NexusRAG</h3>
-                    <p className="text-sm text-slate-400 mb-6">Upload documents and ask questions to get AI-powered answers with source citations.</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {['What are the key findings?', 'Summarize the document', 'Explain the methodology', 'Compare the results'].map((q, i) => (
-                        <button
-                          key={i}
-                          onClick={() => { setInputValue(q); inputRef.current?.focus(); }}
-                          className="p-3 rounded-xl glass-light text-left text-sm text-slate-300 hover:text-white hover:bg-white/[0.04] transition-all duration-200"
-                        >
-                          {q}
-                        </button>
-                      ))}
-                    </div>
+                );
+              })
+            )}
+
+            {isSending && (
+              <div className="flex justify-start">
+                <div className="max-w-md rounded-lg p-4 bg-card border border-border text-foreground space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
+                    <span className="w-2 h-2 rounded-full bg-foreground animate-ping" />
+                    <span>Executing Nearest Neighbor Retrieval & Frontier Inference...</span>
                   </div>
-                </div>
-              ) : (
-                <div className="max-w-3xl mx-auto space-y-6">
-                  {messages.filter(m => m.role !== 'user-edit').map((msg, i) => (
-                    <MessageBubble key={msg.id || i} message={msg} />
-                  ))}
-
-                  {isSending && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex items-start gap-3"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-blue-500 flex items-center justify-center flex-shrink-0">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
-                          <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-                        </svg>
-                      </div>
-                      <div className="p-4 rounded-2xl glass">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                          <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                          <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  <div ref={messagesEndRef} />
-                </div>
-              )}
-            </div>
-
-            {/* Input Area */}
-            {activeSessionId && (
-              <div className="flex-shrink-0 p-4 border-t border-white/5">
-                <div className="max-w-3xl mx-auto">
-                  <div className="relative glass rounded-2xl p-1">
-                    <textarea
-                      ref={inputRef}
-                      value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Ask a question about your documents..."
-                      rows={1}
-                      className="w-full bg-transparent text-white text-sm px-4 py-3 pr-24 resize-none outline-none placeholder:text-slate-500"
-                      style={{ minHeight: '44px', maxHeight: '120px' }}
-                      disabled={isSending}
-                    />
-                    <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
-                        title="Upload document"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                        </svg>
-                      </button>
-                      <motion.button
-                        onClick={handleSend}
-                        disabled={!inputValue.trim() || isSending}
-                        className="p-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200"
-                        whileHover={{ scale: inputValue.trim() && !isSending ? 1.05 : 1 }}
-                        whileTap={{ scale: inputValue.trim() && !isSending ? 0.95 : 1 }}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-                        </svg>
-                      </motion.button>
-                    </div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept=".pdf,.txt,.docx,.html,.htm,.png,.jpg,.jpeg,.heic,.webp,.bmp,.tiff,.tif"
-                      className="hidden"
-                      onChange={(e) => handleFileUpload(e.target.files)}
-                    />
-                  </div>
-                  <p className="text-xs text-slate-600 mt-2 text-center">
-                    Mode: <span className="text-slate-400">{mode === 'strict' ? 'Strict (document-only)' : 'Hybrid (documents + AI)'}</span> — Press Enter to send, Shift+Enter for new line
-                  </p>
                 </div>
               </div>
             )}
+
+            <div ref={messagesEndRef} />
           </div>
 
-          {/* Document Panel - OVERLAPS on mobile */}
-          <AnimatePresence>
-            {docPanelOpen && activeSessionId && (
-              <motion.div
-                initial={{ x: 320, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: 320, opacity: 0 }}
-                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-                className={`h-full border-l border-white/5 bg-[#050118]/60 backdrop-blur-sm flex flex-col overflow-hidden ${
-                  isMobile ? 'fixed inset-y-0 right-0 z-50 w-[320px]' : 'flex-shrink-0 w-[320px]'
-                }`}
-              >
-                <div className="p-4 border-b border-white/5 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-white">Documents</h3>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 text-xs font-medium transition-colors"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                        <path d="M12 5v14" /><path d="M5 12h14" />
-                      </svg>
-                      Upload
-                    </button>
-                    {isMobile && (
-                      <button
-                        onClick={() => setDocPanelOpen(false)}
-                        className="p-1.5 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <path d="M18 6L6 18" /><path d="M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                  {/* Upload Progress */}
-                  {Array.from(uploads.values()).map((upload) => (
-                    <div key={upload.docId} className="p-3 rounded-xl glass-light">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
-                        <span className="text-xs text-slate-300 truncate">{upload.filename}</span>
-                      </div>
-                      <div className="w-full h-1.5 rounded-full bg-white/5">
-                        <div className="h-full rounded-full bg-violet-500 transition-all duration-300" style={{ width: `${Math.min(upload.progress, 100)}%` }} />
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Documents */}
-                  {documents.map((doc) => (
-                    <motion.div
-                      key={doc.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="group p-3 rounded-xl glass-light hover:bg-white/[0.04] transition-all duration-200"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-violet-400">
-                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                            <polyline points="14 2 14 8 20 8" />
-                          </svg>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">{doc.filename}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{formatFileSize(doc.size_bytes)} — {formatDate(doc.created_at)}</p>
-                          {doc.is_temp && <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">Temporary</span>}
-                        </div>
-                        <button
-                          onClick={() => { if (window.confirm(`Delete ${doc.filename}?`)) deleteDocument(doc.id); }}
-                          className="p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                            <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                          </svg>
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))}
-
-                  {documents.length === 0 && uploads.size === 0 && (
-                    <div className="text-center py-12">
-                      <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center mx-auto mb-3">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-slate-500">
-                          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <path d="M12 18v-6" /><path d="m9 15 3-3 3 3" />
-                        </svg>
-                      </div>
-                      <p className="text-sm text-slate-500">No documents yet</p>
-                      <p className="text-xs text-slate-600 mt-1">Upload files or drag & drop</p>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Mobile Document Panel Overlay */}
-          <AnimatePresence>
-            {isMobile && docPanelOpen && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-                onClick={() => setDocPanelOpen(false)}
+          {/* Bottom Query Input Box */}
+          <div className="p-4 border-t border-border bg-background">
+            <div className="max-w-4xl mx-auto rounded-lg border border-border bg-card p-2 focus-within:border-foreground transition-colors">
+              <textarea
+                ref={textareaRef}
+                value={inputValue}
+                onChange={handleTextareaInput}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                placeholder="Ask an analytical question or paste a document query..."
+                className="w-full bg-transparent text-foreground text-sm resize-none focus:outline-none px-2 py-1 placeholder:text-muted-foreground max-h-44"
               />
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    </div>
-  );
-}
+              <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setDocVaultOpen(true)}
+                    className="flex items-center gap-1 hover:text-foreground transition-colors"
+                  >
+                    <Paperclip className="w-3.5 h-3.5" />
+                    <span>Upload Documents</span>
+                  </button>
+                  <span>&bull;</span>
+                  <span className="font-mono text-[10px]">
+                    {documents.length} doc{documents.length !== 1 ? 's' : ''} in context
+                  </span>
+                </div>
 
-/* Message Bubble Component */
-function MessageBubble({ message }: { message: Message }) {
-  const isUser = message.role === 'user';
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 15 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : ''}`}
-    >
-      {/* Avatar */}
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-        isUser
-          ? 'bg-gradient-to-br from-blue-500 to-cyan-500'
-          : 'bg-gradient-to-br from-violet-600 to-blue-500'
-      }`}>
-        {isUser ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-          </svg>
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-          </svg>
-        )}
-      </div>
-
-      {/* Content */}
-      <div className={`max-w-[80%] ${isUser ? 'text-right' : ''}`}>
-        <div className={`inline-block p-4 rounded-2xl text-sm leading-relaxed ${
-          isUser
-            ? 'bg-violet-600/20 border border-violet-500/20 text-white'
-            : 'glass text-slate-200'
-        }`}>
-          {isUser ? (
-            <p className="whitespace-pre-wrap">{message.content}</p>
-          ) : (
-            <div className="markdown-content">
-              <ReactMarkdown>{message.content}</ReactMarkdown>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono hidden sm:inline text-muted-foreground">
+                    Shift+Enter for newline
+                  </span>
+                  <button
+                    onClick={handleSend}
+                    disabled={!inputValue.trim() || isSending}
+                    className="px-3 py-1.5 rounded-md bg-foreground text-background font-semibold text-xs disabled:opacity-40 transition-opacity flex items-center gap-1.5"
+                  >
+                    <span>Synthesize</span>
+                    <Send className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
             </div>
-          )}
-        </div>
-
-        {/* Metadata */}
-        {!isUser && message.metadata?.supported_by_documents && (
-          <div className="flex items-center gap-1.5 mt-1.5 ml-1">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-emerald-400">
-              <path d="m9 12 2 2 4-4" /><circle cx="12" cy="12" r="10" />
-            </svg>
-            <span className="text-xs text-emerald-400/80">Grounded in documents</span>
           </div>
-        )}
+        </main>
       </div>
-    </motion.div>
+
+      {/* Document Vault Modal */}
+      <DocumentVaultModal
+        isOpen={docVaultOpen}
+        onClose={() => setDocVaultOpen(false)}
+        documents={documents}
+        onUpload={uploadDocument}
+        onDelete={deleteDocument}
+      />
+
+      {/* Slide-out Citation Drawer */}
+      <CitationDrawer
+        citation={selectedCitation}
+        onClose={() => setSelectedCitation(null)}
+      />
+    </div>
   );
 }

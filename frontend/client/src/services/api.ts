@@ -6,6 +6,7 @@ import type {
   UploadResponse,
   SessionCreateRequest,
   MessageRequest,
+  ModelsResponse,
   APIError,
 } from '@/types';
 
@@ -62,6 +63,10 @@ class APIClient {
 
   async getMe() {
     return this.request<{ uid: string; email?: string }>('/me');
+  }
+
+  async getModels() {
+    return this.request<ModelsResponse>('/models');
   }
 
   async createSession(payload: SessionCreateRequest) {

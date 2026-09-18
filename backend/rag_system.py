@@ -1,4 +1,4 @@
-# Copyright 2026 Abdulrehman Qureshi
+# Copyright 2026 Abdulrehman Qureshi & NexusRAG Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,47 +13,46 @@
 # limitations under the License.
 
 """
-Cloud-Only RAG System with HuggingFace Inference Providers.
-Adds user/session-aware retrieval, confidence scoring, and strict/hybrid modes.
+NexusRAG Studio - Enterprise & Cloud RAG Engine.
+Supports OpenRouter multi-model synthesis, user/session-scoped vector isolation,
+semantic confidence scoring, and hybrid/strict retrieval modes.
 """
 import re
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from config import get_config
 from document_loader import DocumentLoader
-from embeddings_provider import HuggingFaceEmbeddings
-from llm_provider import HuggingFaceLLM
+from embeddings_provider import create_embeddings
+from llm_provider import create_llm
 from vector_store import VectorStore
+from openrouter_provider import CURATED_MODELS
 
 
 class CloudRAG:
-    """RAG system using HuggingFace Inference Providers."""
+    """Core RAG engine with OpenRouter and multi-model routing."""
 
     def __init__(self):
         print("\n" + "=" * 70)
-        print("🌐 CLOUD RAG SYSTEM - HuggingFace Inference Providers")
+        print("[INIT] NEXUSRAG STUDIO ENGINE - OPENROUTER & RESILIENT RETRIEVAL")
         print("=" * 70 + "\n")
 
         self.config = get_config()
 
-        if not self.config.HF_TOKEN:
-            raise ValueError(
-                "HuggingFace token is required! See config.py for setup instructions."
-            )
+        print("Initializing LLM & Vector Pipeline...\n")
 
-        print("Initializing components...\n")
-
-        self.llm = HuggingFaceLLM(
-            model_name=self.config.LLM_MODEL,
-            api_token=self.config.HF_TOKEN,
+        self.llm = create_llm(
+            openrouter_api_key=self.config.OPENROUTER_API_KEY,
+            hf_token=self.config.HF_TOKEN,
+            model_name=self.config.OPENROUTER_MODEL,
             max_tokens=self.config.MAX_TOKENS,
             temperature=self.config.TEMPERATURE,
         )
 
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=self.config.EMBEDDING_MODEL, api_token=self.config.HF_TOKEN
+        self.embeddings = create_embeddings(
+            model_name=self.config.EMBEDDING_MODEL,
+            api_token=self.config.HF_TOKEN,
         )
 
         self.vector_store = VectorStore(
@@ -63,14 +62,15 @@ class CloudRAG:
         )
 
         self.document_loader = DocumentLoader(
-            chunk_size=self.config.CHUNK_SIZE, chunk_overlap=self.config.CHUNK_OVERLAP
+            chunk_size=self.config.CHUNK_SIZE,
+            chunk_overlap=self.config.CHUNK_OVERLAP,
         )
 
         print("\n" + "=" * 70)
-        print("✅ System initialized successfully!")
-        print(f"📦 LLM: {self.config.LLM_MODEL}")
-        print(f"🧭 Embeddings: {self.config.EMBEDDING_MODEL}")
-        print(f"💾 Documents: {self.vector_store.count()}")
+        print("[OK] NexusRAG Engine initialized successfully!")
+        print(f"[-] Default Model: {self.config.OPENROUTER_MODEL}")
+        print(f"[-] Embeddings: {self.config.EMBEDDING_MODEL}")
+        print(f"[-] Total Indexed Documents: {self.vector_store.count()}")
         print("=" * 70 + "\n")
 
     def add_document(
@@ -79,41 +79,38 @@ class CloudRAG:
         doc_id: str,
         user_id: str,
         session_id: Optional[str],
-        doc_type: str = None,
+        doc_type: Optional[str] = None,
     ):
         """
         Add a document to the knowledge base.
-
-        Args:
-            file_path: Path to the document
-            doc_id: Stable document id for metadata linking
-            user_id: Firebase user id
-            session_id: Session scope
-            doc_type: Optional explicit type override
         """
-        print(f"\n📄 Loading document: {file_path}")
+        print(f"\n[LOAD] Ingesting document: {file_path}")
 
         chunks = self.document_loader.load_document(file_path, doc_type)
-        print(f"🧩 Created {len(chunks)} chunks")
+        print(f"[CHUNKS] Extracted {len(chunks)} contextual chunks")
 
         texts = [chunk["content"] for chunk in chunks]
         metadatas = []
         for chunk in chunks:
-            meta = dict(chunk["metadata"])
-            meta.update({"doc_id": doc_id, "user_id": user_id, "session_id": session_id})
+            meta = dict(chunk.get("metadata", {}))
+            meta.update({
+                "doc_id": doc_id,
+                "user_id": user_id,
+                "session_id": session_id or "",
+            })
             metadatas.append(meta)
 
         self.vector_store.add_documents(texts, metadatas)
-        print("✅ Document added successfully\n")
+        print("[OK] Document vectors indexed successfully\n")
 
     @staticmethod
-    def _confidence_from_distance(distance: Optional[float]) -> Dict:
+    def _confidence_from_distance(distance: Optional[float]) -> Dict[str, Any]:
         if distance is None:
-            return {"score": 0.4, "label": "low"}
+            return {"score": 0.45, "label": "medium"}
         score = max(0.0, 1.0 - min(distance, 1.0))
-        if score > 0.75:
+        if score > 0.72:
             label = "high"
-        elif score > 0.45:
+        elif score > 0.40:
             label = "medium"
         else:
             label = "low"
@@ -121,7 +118,7 @@ class CloudRAG:
 
     @staticmethod
     def _strip_citations(text: str) -> str:
-        """Remove source/chunk markers to prevent leaking internal metadata."""
+        """Remove explicit internal citations to ensure clean editorial copy."""
         if not text:
             return text
 
@@ -135,9 +132,7 @@ class CloudRAG:
         for pattern in patterns:
             cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
 
-        cleaned = re.sub(
-            r"^\s*Sources?:.*$", "", cleaned, flags=re.IGNORECASE | re.MULTILINE
-        )
+        cleaned = re.sub(r"^\s*Sources?:.*$", "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
         cleaned = re.sub(r"\s{2,}", " ", cleaned)
         return cleaned.strip()
 
@@ -148,79 +143,82 @@ class CloudRAG:
         session_id: Optional[str],
         mode: str = "hybrid",
         explain_simpler: bool = False,
+        model: Optional[str] = None,
     ) -> dict:
         """
-        Query the RAG system.
-
-        Args:
-            question: User question
-            user_id: Firebase uid
-            session_id: Chat session scope
-            mode: "strict" uses docs only; "hybrid" can fall back to model
-            explain_simpler: If true, simplifies the language
-
-        Returns:
-            Dictionary with response, sources, confidence, and timing
+        Execute RAG retrieval and synthesis with optional dynamic model selection.
         """
-        print(f"\n❓ Question: {question}\n")
+        active_model = model or self.config.OPENROUTER_MODEL
+        print(f"\n[QUERY] '{question}' [Model: {active_model}, Mode: {mode}]")
 
         where = {"user_id": user_id}
         if session_id:
             where["session_id"] = session_id
 
         retrieve_start = time.monotonic()
-        print("🔍 Searching knowledge base...")
         relevant_docs = self.vector_store.search(
             query=question, top_k=self.config.TOP_K_RESULTS, where=where
         )
         retrieve_ms = int((time.monotonic() - retrieve_start) * 1000)
 
+        # In strict mode, filter out documents with poor distance (>0.75)
+        if mode == "strict":
+            relevant_docs = [d for d in relevant_docs if d.get("distance") is None or d.get("distance") < 0.75]
+
+        # Strict mode without relevant docs
         if not relevant_docs and mode == "strict":
-            print("⚠️ No docs found in strict mode")
             return {
                 "question": question,
-                "response": "I couldn't find support for that in your documents.",
+                "response": "I couldn't find support for that in your uploaded documents.",
                 "sources": [],
                 "num_sources": 0,
                 "supported_by_documents": False,
                 "confidence": {"score": 0.0, "label": "low"},
                 "mode": mode,
+                "model_used": active_model,
                 "retrieval_ms": retrieve_ms,
                 "generation_ms": 0,
             }
 
+        # Hybrid fallback when no relevant docs found
         if not relevant_docs:
-            print("⚠️ No relevant documents found, falling back to model (hybrid)")
             gen_start = time.monotonic()
-            response = self.llm.generate(question)
+            sys_prompt = "You are NexusRAG Studio, an expert AI research assistant. Provide an authoritative, structured, and insightful response."
+            response = self.llm.generate(
+                prompt=question,
+                model_name=active_model,
+                system_prompt=sys_prompt,
+            )
             cleaned_response = self._strip_citations(response)
             gen_ms = int((time.monotonic() - gen_start) * 1000)
+
             return {
                 "question": question,
                 "response": cleaned_response,
                 "sources": [],
                 "num_sources": 0,
                 "supported_by_documents": False,
-                "confidence": {"score": 0.3, "label": "low"},
+                "confidence": {"score": 0.35, "label": "low"},
                 "mode": mode,
+                "model_used": active_model,
                 "retrieval_ms": retrieve_ms,
                 "generation_ms": gen_ms,
             }
 
-        print(f"📚 Found {len(relevant_docs)} relevant chunks\n")
-        # Keep the retrieval context free of explicit source labels to avoid leaking
-        # internal metadata or encouraging the model to cite chunk ids.
+        # Contextual retrieval found
         context = "\n\n---\n\n".join([doc["content"] for doc in relevant_docs])
 
         extra_instruction = (
-            "\nExplain the answer in clear, simple language a teenager can follow."
-            if explain_simpler
-            else ""
+            "\nExplain the answer in clear, elegant language suitable for executive presentation."
+            if not explain_simpler
+            else "\nExplain the answer in simple, highly accessible terminology with crystal clear analogies."
         )
-        prompt = f"""You are a concise, professional assistant. Use the context to answer the question directly.
-- If the context doesn't fully support the answer, say so.
-- Do not mention or invent source numbers, chunk ids, file names, or any metadata.
-- Avoid brackets, citations, or labels in the final answer.
+
+        prompt = f"""You are NexusRAG Studio, an elite intelligence assistant.
+Answer the user's question accurately and concisely using ONLY the provided context when relevant.
+- Ensure all key data points, facts, and figures are highlighted in bold.
+- Use markdown headers and bullet points for readability.
+- Do NOT reference chunk numbers or source tags in the prose.
 {extra_instruction}
 
 Context:
@@ -228,36 +226,35 @@ Context:
 
 Question: {question}
 
-Answer:"""
+Response:"""
 
         gen_start = time.monotonic()
-        response = self.llm.generate(prompt)
+        response = self.llm.generate(prompt=prompt, model_name=active_model)
         cleaned_response = self._strip_citations(response)
         gen_ms = int((time.monotonic() - gen_start) * 1000)
 
         sources = []
         best_distance = None
         for i, doc in enumerate(relevant_docs):
-            if best_distance is None:
-                best_distance = doc.get("distance")
-            else:
-                try:
-                    best_distance = min(best_distance, doc.get("distance"))
-                except Exception:
-                    pass
+            dist = doc.get("distance")
+            if best_distance is None or (dist is not None and dist < best_distance):
+                best_distance = dist
+
             meta = doc.get("metadata", {})
             raw_source = meta.get("source") or "Document"
             source_name = Path(raw_source).name
-            sources.append(
-                {
-                    "source": source_name,
-                    "chunk": i,
-                    "id": meta.get("doc_id"),
-                }
-            )
+            snippet = doc.get("content", "")[:280] + "..." if len(doc.get("content", "")) > 280 else doc.get("content", "")
+
+            sources.append({
+                "source": source_name,
+                "chunk": i + 1,
+                "id": meta.get("doc_id"),
+                "snippet": snippet,
+                "distance": round(dist, 4) if dist is not None else None,
+            })
 
         confidence = self._confidence_from_distance(best_distance)
-        supported = confidence["score"] >= 0.35
+        supported = len(sources) > 0 and (best_distance is None or best_distance < 0.85)
 
         return {
             "question": question,
@@ -267,6 +264,7 @@ Answer:"""
             "supported_by_documents": supported,
             "confidence": confidence,
             "mode": mode,
+            "model_used": active_model,
             "retrieval_ms": retrieve_ms,
             "generation_ms": gen_ms,
         }
@@ -282,24 +280,11 @@ Answer:"""
     def get_stats(self) -> dict:
         """Get system statistics."""
         return {
-            "model": self.config.LLM_MODEL,
+            "model": self.config.OPENROUTER_MODEL,
             "embedding_model": self.config.EMBEDDING_MODEL,
             "documents": self.vector_store.count(),
             "chunk_size": self.config.CHUNK_SIZE,
             "top_k": self.config.TOP_K_RESULTS,
+            "available_models": CURATED_MODELS,
+            "has_openrouter_key": bool(self.config.OPENROUTER_API_KEY),
         }
-
-
-def main():
-    try:
-        rag = CloudRAG()
-        print("Ready to use! See example usage in the code.\n")
-    except Exception as exc:  # pylint: disable=broad-except
-        print(f"\n❌ Error: {exc}\n")
-        import traceback
-
-        traceback.print_exc()
-
-
-if __name__ == "__main__":
-    main()

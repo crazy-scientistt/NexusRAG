@@ -1,36 +1,23 @@
-/*
- * Copyright 2026 Abdulrehman Qureshi
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { Navbar } from '@/components/layout/Navbar';
-import { ParticleField } from '@/components/shared/ParticleField';
+import { Footer } from '@/components/layout/Footer';
 import { LandingPage } from '@/pages/LandingPage';
 import { FeaturesPage } from '@/pages/FeaturesPage';
+import { SecurityPage } from '@/pages/SecurityPage';
+import { TermsPage } from '@/pages/TermsPage';
+import { PrivacyPage } from '@/pages/PrivacyPage';
 import { AuthPage } from '@/pages/AuthPage';
 import { WorkspacePage } from '@/pages/WorkspacePage';
 
-type Page = 'landing' | 'features' | 'auth' | 'workspace';
+type Page = 'landing' | 'features' | 'security' | 'terms' | 'privacy' | 'auth' | 'workspace';
 
 const pageTransition = {
-  initial: { opacity: 0, y: 20 },
+  initial: { opacity: 0, y: 10 },
   animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -20 },
-  transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] },
+  exit: { opacity: 0, y: -10 },
+  transition: { duration: 0.25, ease: [0.22, 1, 0.36, 1] },
 };
 
 export default function App() {
@@ -65,62 +52,73 @@ export default function App() {
   // Loading Screen
   if (isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#030014]">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
-          className="text-center"
-        >
-          <div className="relative w-16 h-16 mx-auto mb-6">
-            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-violet-600 to-blue-500 animate-pulse" />
-            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-violet-600 to-blue-500 flex items-center justify-center">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
-            </div>
+      <div className="h-screen flex items-center justify-center bg-background text-foreground">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-md bg-foreground text-background flex items-center justify-center font-mono font-bold text-base">
+            N
           </div>
-          <div className="flex items-center gap-1.5 justify-center">
-            <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-            <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-            <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-2 h-2 rounded-full bg-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-2 h-2 rounded-full bg-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
           </div>
-        </motion.div>
+        </div>
       </div>
     );
   }
 
-  // Workspace is a full-screen layout without navbar
+  // Workspace has its own full-screen canvas
   if (currentPage === 'workspace' && isAuthenticated) {
     return <WorkspacePage onBack={() => setCurrentPage('landing')} />;
   }
 
+  // Auth has its own dedicated page
+  if (currentPage === 'auth') {
+    return (
+      <AuthPage
+        onSuccess={() => setCurrentPage('workspace')}
+        onBack={() => setCurrentPage('landing')}
+      />
+    );
+  }
+
   return (
-    <div className="relative min-h-screen bg-[#030014]">
-      <ParticleField />
+    <div className="min-h-screen bg-background text-foreground flex flex-col justify-between selection:bg-foreground selection:text-background transition-colors duration-200">
       <Navbar onNavigate={navigate} currentPage={currentPage} />
 
-      <AnimatePresence mode="wait">
-        <motion.div key={currentPage} {...pageTransition}>
-          {currentPage === 'landing' && (
-            <LandingPage
-              onGetStarted={() => navigate(isAuthenticated ? 'workspace' : 'auth')}
-              onFeatures={() => navigate('features')}
-            />
-          )}
-          {currentPage === 'features' && (
-            <FeaturesPage onGetStarted={() => navigate(isAuthenticated ? 'workspace' : 'auth')} />
-          )}
-          {currentPage === 'auth' && (
-            <AuthPage
-              onSuccess={() => setCurrentPage('workspace')}
-              onBack={() => setCurrentPage('landing')}
-            />
-          )}
-        </motion.div>
-      </AnimatePresence>
+      <div className="flex-1">
+        <AnimatePresence mode="wait">
+          <motion.div key={currentPage} {...pageTransition}>
+            {currentPage === 'landing' && (
+              <LandingPage
+                onGetStarted={() => navigate(isAuthenticated ? 'workspace' : 'auth')}
+                onFeatures={() => navigate('features')}
+                onNavigate={navigate}
+              />
+            )}
+            {currentPage === 'features' && (
+              <FeaturesPage
+                onGetStarted={() => navigate(isAuthenticated ? 'workspace' : 'auth')}
+                onBack={() => navigate('landing')}
+              />
+            )}
+            {currentPage === 'security' && (
+              <SecurityPage
+                onBack={() => navigate('landing')}
+                onGetStarted={() => navigate(isAuthenticated ? 'workspace' : 'auth')}
+              />
+            )}
+            {currentPage === 'terms' && (
+              <TermsPage onBack={() => navigate('landing')} />
+            )}
+            {currentPage === 'privacy' && (
+              <PrivacyPage onBack={() => navigate('landing')} />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      <Footer onNavigate={navigate} />
     </div>
   );
 }

@@ -41,7 +41,7 @@ class VectorStore:
 
         self.embedding_function = embedding_function
 
-        print(f"✅ Vector store initialized: {collection_name}")
+        print(f"[OK] Vector store initialized: {collection_name}")
         print(f"   Documents: {self.collection.count()}")
 
     def add_documents(self, texts: List[str], metadatas: List[Dict[str, Any]]):
@@ -68,11 +68,11 @@ class VectorStore:
             for i, meta in enumerate(metadatas)
         ]
 
-        self.collection.add(
+        self.collection.upsert(
             embeddings=list(embeddings), documents=list(texts), metadatas=list(metadatas), ids=ids
         )
 
-        print(f"✅ Added {len(texts)} documents to vector store")
+        print(f"[OK] Added/Updated {len(texts)} documents in vector store")
 
     @staticmethod
     def _normalize_where(where: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -136,15 +136,15 @@ class VectorStore:
         self.collection = self.client.get_or_create_collection(
             name=self.collection.name, metadata={"hnsw:space": "cosine"}
         )
-        print("✅ Vector store cleared")
+        print("[OK] Vector store cleared")
 
     def delete_by_doc_id(self, doc_id: str):
         self.collection.delete(where=self._normalize_where({"doc_id": doc_id}))
-        print(f"✅ Removed vectors for doc_id={doc_id}")
+        print(f"[OK] Removed vectors for doc_id={doc_id}")
 
     def delete_where(self, where: Dict[str, Any]):
         self.collection.delete(where=self._normalize_where(where))
-        print(f"✅ Removed vectors matching {where}")
+        print(f"[OK] Removed vectors matching {where}")
 
     def count(self) -> int:
         return self.collection.count()

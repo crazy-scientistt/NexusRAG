@@ -15,7 +15,13 @@
 """
 FastAPI backend for the RAG system with Firebase auth, sessions, and document management.
 """
+import sys
 import os
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 import shutil
 import uuid
 from datetime import datetime, timedelta
@@ -57,6 +63,7 @@ from db_supabase import (
     clone_session,
 )
 from rag_system import CloudRAG
+from openrouter_provider import CURATED_MODELS
 
 
 config = get_config()
@@ -96,6 +103,7 @@ class MessageRequest(BaseModel):
     mode: str = "hybrid"  # strict | hybrid
     explain_simpler: bool = False
     replace_message_id: Optional[str] = None
+    model: Optional[str] = None
 
 
 class QueryResponse(BaseModel):
@@ -106,6 +114,7 @@ class QueryResponse(BaseModel):
     supported_by_documents: bool
     confidence: dict
     mode: str
+    model_used: Optional[str] = None
     retrieval_ms: int
     generation_ms: int
 
@@ -146,7 +155,7 @@ def _delete_file(path: Path):
         if path.exists():
             path.unlink()
     except Exception as exc:  # pylint: disable=broad-except
-        print(f"⚠️ Failed to delete file {path}: {exc}")
+        print(f"[WARN] Failed to delete file {path}: {exc}")
 
 
 def _get_rag() -> CloudRAG:
@@ -161,7 +170,7 @@ async def startup_event():
     global rag_instance  # pylint: disable=global-statement
     rag_instance = CloudRAG()
     init_db()
-    print("✅ Database ready")
+    print("[OK] Database ready")
 
     # Clean expired temp docs and stale sessions
     expired = cleanup_expired_documents()
@@ -198,6 +207,16 @@ async def get_stats(user=Depends(get_current_user)):
     _ensure_user(user)
     rag = _get_rag()
     return rag.get_stats()
+
+
+@app.get("/models")
+async def get_models(user=Depends(get_current_user)):
+    _ensure_user(user)
+    return {
+        "active_model": config.OPENROUTER_MODEL,
+        "models": CURATED_MODELS,
+        "has_openrouter_key": bool(config.OPENROUTER_API_KEY),
+    }
 
 
 @app.post("/sessions")
@@ -295,11 +314,14 @@ async def create_message(
         session_id=session_id,
         mode=payload.mode,
         explain_simpler=payload.explain_simpler,
+        model=payload.model,
     )
 
     assistant_metadata = {
         "supported_by_documents": result["supported_by_documents"],
         "mode": payload.mode,
+        "model_used": result.get("model_used"),
+        "confidence": result.get("confidence"),
     }
 
     add_message(

@@ -12,11 +12,28 @@ export interface Session {
   updated_at?: string;
 }
 
+export interface ModelInfo {
+  id: string;
+  name: string;
+  provider: string;
+  context_length: number;
+  description: string;
+  badge: string;
+  is_default?: boolean;
+}
+
+export interface ModelsResponse {
+  active_model: string;
+  models: ModelInfo[];
+  has_openrouter_key: boolean;
+}
+
 export interface MessageMetadata {
   sources?: SourceCitation[];
-  confidence?: Record<string, number>;
+  confidence?: { score: number; label: string } | Record<string, any>;
   supported_by_documents?: boolean;
   mode?: 'strict' | 'hybrid';
+  model_used?: string;
   target?: string;
 }
 
@@ -34,6 +51,9 @@ export interface Message {
 export interface SourceCitation {
   source: string;
   chunk: number;
+  id?: string;
+  snippet?: string;
+  distance?: number;
   text?: string;
   relevance?: number;
 }
@@ -55,8 +75,9 @@ export interface QueryResponse {
   sources: SourceCitation[];
   num_sources: number;
   supported_by_documents: boolean;
-  confidence: Record<string, number>;
+  confidence: { score: number; label: string } | Record<string, any>;
   mode: 'strict' | 'hybrid';
+  model_used?: string;
   retrieval_ms: number;
   generation_ms: number;
 }
@@ -79,6 +100,7 @@ export interface MessageRequest {
   mode: 'strict' | 'hybrid';
   explain_simpler: boolean;
   replace_message_id?: string;
+  model?: string;
 }
 
 export interface APIError {

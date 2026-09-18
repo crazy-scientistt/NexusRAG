@@ -21,61 +21,66 @@ from typing import List
 
 @dataclass
 class Config:
-    """Cloud RAG system configuration."""
+    """NexusRAG Cloud & Studio RAG system configuration."""
     
-    # HuggingFace Token - REQUIRED
+    # OpenRouter Configuration (Primary)
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+    
+    # HuggingFace Token (Optional / Fallback)
     HF_TOKEN: str = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN") or ""
     
-    # Model Selection
-    LLM_MODEL: str = "Qwen/Qwen3-4B-Instruct-2507"
-    EMBEDDING_MODEL: str = "Alibaba-NLP/Qwen3-Embedding-0.6B"
+    # Model Selection & Fallback
+    LLM_MODEL: str = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "Alibaba-NLP/Qwen3-Embedding-0.6B")
     
     # Generation Parameters
-    MAX_TOKENS: int = 1536
-    TEMPERATURE: float = 0.9
+    MAX_TOKENS: int = int(os.getenv("MAX_TOKENS", "2048"))
+    TEMPERATURE: float = float(os.getenv("TEMPERATURE", "0.4"))
     
     # Vector Database
-    VECTOR_DB_DIR: str = "./data/chroma"
-    COLLECTION_NAME: str = "rag_knowledge"
+    VECTOR_DB_DIR: str = os.getenv("VECTOR_DB_DIR", "./data/chroma")
+    COLLECTION_NAME: str = os.getenv("COLLECTION_NAME", "rag_knowledge")
     
     # Document Processing
-    CHUNK_SIZE: int = 700 #1000 for bigger models
-    CHUNK_OVERLAP: int = 150 # 200 
+    CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "750"))
+    CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "150"))
 
     # Frontend / Security
     ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "*")
     
     # File uploads
-    MAX_FILE_MB: int = int(os.getenv("MAX_FILE_MB", "20"))
+    MAX_FILE_MB: int = int(os.getenv("MAX_FILE_MB", "25"))
     TEMP_DOC_TTL_MIN: int = int(os.getenv("TEMP_DOC_TTL_MIN", "1440"))  # 24h
     
     # Persistence
-    # Use SUPABASE_DB_URL for Supabase, DATABASE_URL for other PostgreSQL, or DB_PATH for SQLite
     DB_PATH: str = os.getenv("DB_PATH", "./data/rag.db")
     
     # RAG behavior
     DEFAULT_STRICT: bool = os.getenv("DEFAULT_STRICT", "false").lower() == "true"
     TOP_K_RESULTS: int = int(os.getenv("TOP_K_RESULTS", "4"))
     
-    # Payments (disabled by default, kept for toggle)
-    PAYMENT_ENABLED: bool = os.getenv("PAYMENT_ENABLED", "true").lower() == "true"
+    # Payments
+    PAYMENT_ENABLED: bool = os.getenv("PAYMENT_ENABLED", "false").lower() == "true"
     
-    # Firebase
+    # Auth & Developer Mode
+    DEV_MODE: bool = os.getenv("DEV_MODE", "true").lower() == "true"
     FIREBASE_CREDENTIALS: str = os.getenv("FIREBASE_CREDENTIALS", "")
+    FIREBASE_CREDENTIALS_JSON: str = os.getenv("FIREBASE_CREDENTIALS_JSON", "")
 
 def get_config() -> Config:
     """Get system configuration."""
     config = Config()
     
-    if not config.HF_TOKEN:
+    if not config.OPENROUTER_API_KEY and not config.HF_TOKEN:
         print("\n" + "="*70)
-        print("⚠️  WARNING: No HuggingFace token found!")
+        print("[INFO] NOTE: Neither OPENROUTER_API_KEY nor HF_TOKEN is set!")
         print("="*70)
-        print("\n📋 To fix this:")
-        print("1. Get token from: https://huggingface.co/settings/tokens")
-        print("2. Create 'Fine-grained' token with 'Inference Providers' permission")
-        print("3. Set environment variable:")
-        print("   export HF_TOKEN='your_token_here'")
+        print("To enable AI responses:")
+        print("1. Set OPENROUTER_API_KEY='your_openrouter_key'")
+        print("2. Optionally choose model: OPENROUTER_MODEL='google/gemini-2.0-flash-001'")
         print("="*70 + "\n")
+    elif config.OPENROUTER_API_KEY:
+        print(f"[OK] OpenRouter active with model: {config.OPENROUTER_MODEL}")
     
     return config

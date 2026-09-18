@@ -39,12 +39,7 @@ export function useMessages(sessionId: string | null, onFirstMessage?: (message:
         const data = await apiClient.getMessages(sessionId);
         const sanitized = data.map((message) => {
           if (message.role === 'assistant') {
-            const { metadata, ...rest } = message;
-            const safeMeta = metadata ? {
-              supported_by_documents: metadata.supported_by_documents,
-              mode: metadata.mode,
-            } : undefined;
-            return { ...rest, role: message.role, content: stripInternalMarkers(message.content), metadata: safeMeta };
+            return { ...rest, role: message.role, content: stripInternalMarkers(message.content), metadata };
           }
           return message;
         });
@@ -76,9 +71,17 @@ export function useMessages(sessionId: string | null, onFirstMessage?: (message:
         content: payload.question, created_at: new Date().toISOString(),
       };
       const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`, session_id: sessionId, role: 'assistant',
+        id: `assistant-${Date.now()}`,
+        session_id: sessionId,
+        role: 'assistant',
         content: cleanedResponse,
-        metadata: { supported_by_documents: response.supported_by_documents, mode: response.mode },
+        metadata: {
+          supported_by_documents: response.supported_by_documents,
+          mode: response.mode,
+          sources: response.sources,
+          confidence: response.confidence,
+          model_used: response.model_used,
+        },
         created_at: new Date().toISOString(),
       };
 

@@ -42,36 +42,36 @@ const loadScript = (src: string) =>
   });
 
 async function bootstrap() {
-  try {
-    if (!window.firebase) {
-      await Promise.all([
-        loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"),
-        loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"),
-      ]);
-    }
-  } catch (err) {
-    console.error("Firebase SDK failed to load", err);
-  }
+  const firebaseApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
 
-  const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  };
+  if (firebaseApiKey) {
+    try {
+      if (!window.firebase) {
+        await Promise.all([
+          loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"),
+          loadScript("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"),
+        ]);
+      }
 
-  try {
-    if (window.firebase && (!window.firebase.apps || window.firebase.apps.length === 0)) {
-      window.firebase.initializeApp(firebaseConfig);
-      const auth = window.firebase.auth();
-      auth
-        .setPersistence(window.firebase.auth.Auth.Persistence.LOCAL)
-        .catch((error: unknown) => console.warn("Could not enable auth persistence:", error));
+      const firebaseConfig = {
+        apiKey: firebaseApiKey,
+        authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+        storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+        messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+        appId: import.meta.env.VITE_FIREBASE_APP_ID,
+      };
+
+      if (window.firebase && (!window.firebase.apps || window.firebase.apps.length === 0)) {
+        window.firebase.initializeApp(firebaseConfig);
+        const auth = window.firebase.auth();
+        auth
+          .setPersistence(window.firebase.auth.Auth.Persistence.LOCAL)
+          .catch((error: unknown) => console.warn("Could not enable auth persistence:", error));
+      }
+    } catch (err) {
+      console.warn("Firebase initialization skipped or failed:", err);
     }
-  } catch (err) {
-    console.error("Firebase initialization error", err);
   }
 
   const rootEl = document.getElementById("root");
