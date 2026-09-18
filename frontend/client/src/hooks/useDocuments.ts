@@ -103,7 +103,12 @@ export function useDocuments(sessionId: string | null) {
     }
   }, []);
 
-  const clearDocuments = useCallback(() => { setDocuments([]); setUploads(new Map()); }, []);
+  const clearDocuments = useCallback(() => {
+    setDocuments([]);
+    setUploads(new Map());
+  }, []);
 
-  return { documents, uploads, isLoading, error, uploadDocument, deleteDocument, previewDocument, clearDocuments };
+  const isUploading = uploads.size > 0 && Array.from(uploads.values()).some((u) => u.status === 'uploading' || u.status === 'processing');
+
+  return { documents, uploads, isUploading, isLoading, error, uploadDocument, deleteDocument, previewDocument, clearDocuments };
 }

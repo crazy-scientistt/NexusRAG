@@ -39,7 +39,12 @@ export function useMessages(sessionId: string | null, onFirstMessage?: (message:
         const data = await apiClient.getMessages(sessionId);
         const sanitized = data.map((message) => {
           if (message.role === 'assistant') {
-            return { ...rest, role: message.role, content: stripInternalMarkers(message.content), metadata };
+            return {
+              ...message,
+              content: stripInternalMarkers(message.content),
+              sources: message.sources || message.metadata?.sources,
+              model_used: message.model_used || message.metadata?.model_used,
+            };
           }
           return message;
         });

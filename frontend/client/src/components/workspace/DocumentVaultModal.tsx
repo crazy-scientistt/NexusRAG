@@ -155,7 +155,7 @@ export function DocumentVaultModal({
                     <div className="truncate">
                       <p className="font-semibold text-foreground truncate">{doc.filename}</p>
                       <p className="text-[10px] font-mono text-muted-foreground">
-                        {formatFileSize(doc.file_size)} &bull; {doc.chunk_count || '1'} chunks &bull; {formatDate(doc.created_at)}
+                        {formatFileSize(doc.file_size || doc.size_bytes || 0)} &bull; {doc.chunk_count || '1'} chunks &bull; {formatDate(doc.created_at)}
                       </p>
                     </div>
                   </div>

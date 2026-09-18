@@ -167,10 +167,18 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
       await sendMessage({
         question: fullQuery,
         mode: strictMode ? 'strict' : 'hybrid',
+        explain_simpler: false,
         model: selectedModelId,
       });
     } catch (e) {
       console.error('Send message error:', e);
+    }
+  };
+
+  const handleUploadFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    for (let i = 0; i < files.length; i++) {
+      await uploadDocument(files[i]);
     }
   };
 
@@ -495,7 +503,7 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                       }`}
                     >
                       <div className="flex items-center justify-between text-[10px] font-mono opacity-60 border-b border-current/10 pb-2">
-                        <span>{isUser ? 'Inquiry' : `Synthesis (${msg.model_used || selectedModelId.split('/').pop()})`}</span>
+                        <span>{isUser ? 'Inquiry' : `Synthesis (${msg.model_used || msg.metadata?.model_used || selectedModelId.split('/').pop()})`}</span>
                         <div className="flex items-center gap-3">
                           <button
                             onClick={() => handleCopy(msg.id, msg.content)}
@@ -525,20 +533,20 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
                       </div>
 
                       {/* Citations */}
-                      {!isUser && msg.sources && msg.sources.length > 0 && (
+                      {!isUser && (msg.sources || msg.metadata?.sources) && (msg.sources || msg.metadata?.sources)!.length > 0 && (
                         <div className="pt-2.5 border-t border-border space-y-1.5">
                           <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground block">
-                            Grounding Citations ({msg.sources.length}):
+                            Grounding Citations ({(msg.sources || msg.metadata?.sources)!.length}):
                           </span>
                           <div className="flex flex-wrap gap-1.5">
-                            {msg.sources.map((src, i) => (
+                            {(msg.sources || msg.metadata?.sources)!.map((src: SourceCitation, i: number) => (
                               <button
                                 key={i}
                                 onClick={() => setSelectedCitation(src)}
                                 className="px-2 py-1 rounded bg-secondary text-[11px] font-mono border border-border text-foreground hover:border-foreground/50 transition-colors flex items-center gap-1.5 truncate max-w-full sm:max-w-xs min-h-[28px]"
                               >
                                 <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                                <span className="truncate">{src.document_name}</span>
+                                <span className="truncate">{src.document_name || src.source || 'Document'}</span>
                                 {src.distance !== undefined && (
                                   <span className="text-muted-foreground text-[9px]">
                                     ({src.distance.toFixed(2)})
@@ -648,7 +656,7 @@ export function WorkspacePage({ onBack }: WorkspacePageProps) {
         isOpen={docVaultOpen}
         onClose={() => setDocVaultOpen(false)}
         documents={documents}
-        onUpload={uploadDocument}
+        onUpload={handleUploadFiles}
         onDelete={deleteDocument}
         isUploading={isUploading}
       />

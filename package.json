@@ -1,8 +1,8 @@
 {
-  "name": "nexus-rag",
+  "name": "nexusrag",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "cd frontend && npm install --legacy-peer-deps && npm run build"
+    "build": "npm --prefix frontend install --legacy-peer-deps && npm --prefix frontend run build"
   }
 }

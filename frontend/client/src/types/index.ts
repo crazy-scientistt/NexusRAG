@@ -46,16 +46,21 @@ export interface Message {
   created_at: string;
   pinned?: boolean;
   parent_id?: string;
+  sources?: SourceCitation[];
+  model_used?: string;
 }
 
 export interface SourceCitation {
-  source: string;
-  chunk: number;
+  source?: string;
+  chunk?: number;
   id?: string;
   snippet?: string;
   distance?: number;
   text?: string;
   relevance?: number;
+  document_name?: string;
+  chunk_index?: number;
+  content?: string;
 }
 
 export interface Document {
@@ -63,6 +68,8 @@ export interface Document {
   filename: string;
   mime: string;
   size_bytes: number;
+  file_size?: number;
+  chunk_count?: number;
   is_temp: boolean;
   expires_at?: string;
   created_at: string;
@@ -98,7 +105,7 @@ export interface SessionCreateRequest {
 export interface MessageRequest {
   question: string;
   mode: 'strict' | 'hybrid';
-  explain_simpler: boolean;
+  explain_simpler?: boolean;
   replace_message_id?: string;
   model?: string;
 }
