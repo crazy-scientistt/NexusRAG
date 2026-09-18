@@ -42,7 +42,7 @@ STOPWORDS = {
     "we", "were", "what", "when", "where", "which", "while", "who", "will", "with",
     "would", "you", "your", "it's", "also", "any", "each", "both", "about",
     # Dropped so "18 percent" reduces to the same token as "18%".
-    "percent", "pct", "percentage",
+    "percent", "pct", "percentage", "yoy", "vs", "n/a",
 }
 
 SUPPORTED_AT = 0.60
@@ -55,6 +55,24 @@ _MARKDOWN_NOISE = re.compile(r"[*_`#>\[\]()]|^\s*[-+]\s+|^\s*\d+[.)]\s+")
 _WORD = re.compile(r"[a-z0-9][a-z0-9'%$.,-]*")
 
 
+_TABLE_SEPARATOR = re.compile(r"^\s*\|?[\s:|-]*-{2,}[\s:|-]*\|?\s*$")
+_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+_MAGNITUDE = re.compile(r"^(\d+(?:\.\d+)?)(m|mm|k|b|bn|t)$")
+
+
+def _is_structural(unit: str, next_unit: str) -> bool:
+    """True for table scaffolding, which carries no claim to verify.
+
+    A separator row is pure syntax, and the row above it is the column headings:
+    judging "| Metric | Q3 Value | Change |" as a claim marked accurate answers
+    unverified purely for their table labels.
+    """
+    if _TABLE_SEPARATOR.match(unit):
+        return True
+    if _TABLE_ROW.match(unit) and next_unit and _TABLE_SEPARATOR.match(next_unit):
+        return True
+    return False
+
 def _content_words(text: str) -> set:
     """Lowercased meaningful words, with markdown and stopwords stripped."""
     cleaned = _MARKDOWN_NOISE.sub(" ", text.lower())
@@ -63,6 +81,10 @@ def _content_words(text: str) -> set:
         # Strip currency, percent and thousands separators so the same figure
         # written two ways counts as the same evidence.
         word = raw.strip(".,'-%$").replace(",", "").replace("$", "").replace("%", "")
+        # "4.2m" and "4.2 million" are the same figure written two ways.
+        magnitude = _MAGNITUDE.match(word)
+        if magnitude:
+            word = magnitude.group(1)
         if len(word) > 1 and word not in STOPWORDS:
             words.add(word)
     return words
@@ -160,10 +182,15 @@ def verify_answer(answer: str, chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
     results: List[Dict[str, Any]] = []
     counts = {"supported": 0, "partial": 0, "unverified": 0, "skipped": 0}
 
-    for sentence in sentences:
+    for position, sentence in enumerate(sentences):
         words = _content_words(sentence)
-        # Too short to judge: headers, "In summary:", list scaffolding.
-        if len(words) < MIN_CONTENT_WORDS or not working:
+        next_unit = sentences[position + 1] if position + 1 < len(sentences) else ""
+        # Too short to judge, or pure table scaffolding carrying no claim.
+        if (
+            len(words) < MIN_CONTENT_WORDS
+            or not working
+            or _is_structural(sentence, next_unit)
+        ):
             counts["skipped"] += 1
             results.append({
                 "text": sentence,
