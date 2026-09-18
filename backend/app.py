@@ -319,7 +319,12 @@ async def create_message(
     sanitized_question = validate_question(payload.question)
 
     # 3. Model Whitelisting (prevents unauthorized expensive model attacks)
-    validated_model = validate_model(payload.model, config.OPENROUTER_MODEL)
+    # Resolve the fallback too: validate_model returns the default untouched when
+    # the request names no model, so an unusable OPENROUTER_MODEL would slip past
+    # the allowlist and fail the call.
+    validated_model = validate_model(
+        payload.model, resolve_default_model(config.OPENROUTER_MODEL)
+    )
 
     upsert_user(user["uid"], user.get("email", ""))
 

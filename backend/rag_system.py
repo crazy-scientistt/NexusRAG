@@ -45,7 +45,7 @@ class CloudRAG:
         self.llm = create_llm(
             openrouter_api_key=self.config.OPENROUTER_API_KEY,
             hf_token=self.config.HF_TOKEN,
-            model_name=self.config.OPENROUTER_MODEL,
+            model_name=resolve_default_model(self.config.OPENROUTER_MODEL),
             max_tokens=self.config.MAX_TOKENS,
             temperature=self.config.TEMPERATURE,
         )
@@ -68,7 +68,7 @@ class CloudRAG:
 
         print("\n" + "=" * 70)
         print("[OK] NexusRAG Engine initialized successfully!")
-        print(f"[-] Default Model: {self.config.OPENROUTER_MODEL}")
+        print(f"[-] Default Model: {resolve_default_model(self.config.OPENROUTER_MODEL)}")
         print(f"[-] Embeddings: {self.config.EMBEDDING_MODEL}")
         print(f"[-] Total Indexed Documents: {self.vector_store.count()}")
         print("=" * 70 + "\n")
